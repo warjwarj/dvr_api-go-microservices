@@ -1,0 +1,35 @@
+services:
+  # mongo server to store the device messages in
+  mongodb:
+    image: mongo:latest  # Use the official MongoDB image from Docker Hub
+    container_name: mongodb  # Name of the container
+    ports:
+      - "27017:27017"  # Map the MongoDB port 27017 to the host
+  # rabbitmq image
+  rabbitmq:
+    image: rabbitmq:3
+    container_name: rabbitmq
+    ports:
+     - "5672:5672"
+     - "15672:15672"
+  # device server, intake device messages
+  device_svr:  
+    build:
+      context: ./services/device_svr
+      dockerfile: device_svr.Dockerfile
+      ports:
+       - "9047:9047"
+  # api server, point of contact for api clients
+  api_svr:  
+    build:
+      context: ./services/api_svr
+      dockerfile: api_svr.Dockerfile
+      ports:
+       - "9046:9046"
+  # database proxy, access point for databases
+  dbproxy_svr:  
+    build:
+      context: ./services/dbproxy_svr
+      dockerfile: dbproxy_svr.Dockerfile
+      ports:
+       - "9045:9045"
