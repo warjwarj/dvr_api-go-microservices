@@ -23,7 +23,10 @@ const (
 	BUF_SIZE        int = 1024 // how much memory will you allocate to IO operations
 	SVR_MSGBUF_SIZE int = 40   // capacity of message queue
 
-	// rabbitmq variables
-	DEVICEMSG_OUTPUT_CHANNEL = "devicemsg_output_channel"
-	DEVICEMSG_INPUT_CHANNEL  = "devicemsg_input_channel"
+	// rabbitmq variables for Qs and Xchanges. Since we only have one queue on the exchange going in from the message broker we can have it named the same as the exchange.
+	MSGS_TO_DEVICE_SVR   string = "msgs_to_device_svr"
+	MSGS_FROM_DEVICE_SVR string = "msgs_from_device_svr"
+
+	MSGS_TO_API_SVR   string = "msgs_to_api_svr"
+	MSGS_FROM_API_SVR string = "msgs_from_api_svr"
 )

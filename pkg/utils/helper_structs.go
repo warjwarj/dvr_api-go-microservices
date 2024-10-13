@@ -18,9 +18,9 @@ type ApiRes_WS struct {
 
 // used in ws_svr.go - use to convey subscription requests to the handler from the server
 type SubReqWrapper struct {
-	clientId   *string
-	newDevlist []string
-	oldDevlist []string
+	ClientId   *string
+	NewDevlist []string
+	OldDevlist []string
 }
 
 // pass messages out of servers into handlers

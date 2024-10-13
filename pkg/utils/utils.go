@@ -146,14 +146,13 @@ func GetDateFromMessage(message string) (time.Time, error) {
 }
 
 // get id from msg format: IDENTIFIER;1234;<-That's the id;xXxXxXxXxX;<CR>
-func GetIdFromMessage(message *string, id *string) error {
+func GetIdFromMessage(message *string) (*string, error) {
 	msgSlice := strings.Split(*message, ";")
 	for _, v := range msgSlice {
 		_, err := strconv.Atoi(v)
 		if err == nil {
-			*id = v
-			return nil
+			return &v, nil
 		}
 	}
-	return fmt.Errorf("couldn't extract id from: %v", message)
+	return nil, fmt.Errorf("couldn't extract id from: %v", message)
 }

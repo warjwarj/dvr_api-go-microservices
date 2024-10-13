@@ -1,29 +1,38 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"net"
+	"time"
 
-	"dvr_api-go-microservices/pkg/config" // our shared config package
-	"dvr_api-go-microservices/pkg/utils"  // our shared utils package
+	"dvr_api-go-microservices/pkg/config"
+	"dvr_api-go-microservices/pkg/utils" // our shared utils package
 
 	amqp "github.com/rabbitmq/amqp091-go" // rabbitmq import
-	"go.uber.org/zap"
+	zap "go.uber.org/zap"
 )
 
 type DeviceSvr struct {
-	logger         *zap.Logger
-	endpoint       string                     // IP + port, ex: "192.168.1.77:9047"
-	capacity       int                        // num of connections
-	sockOpBufSize  int                        // how much memory do we give each connection to perform send/recv operations
-	sockOpBufStack utils.Stack[*[]byte]       // memory region we give each conn to so send/recv
-	svrMsgBufSize  int                        // how many messages can we queue on the server at once
-	svrMsgBufChan  chan utils.MessageWrapper  // the channel we use to queue the messages
-	connIndex      utils.Dictionary[net.Conn] // index of the connection objects against the ids of the devices represented thusly
-	msgChannel     *amqp.Channel
+	logger              *zap.Logger
+	endpoint            string                     // IP + port, ex: "192.168.1.77:9047"
+	capacity            int                        // num of connections
+	sockOpBufSize       int                        // how much memory do we give each connection to perform send/recv operations
+	sockOpBufStack      utils.Stack[*[]byte]       // memory region we give each conn to so send/recv
+	svrMsgBufSize       int                        // how many messages can we queue on the server at once
+	svrMsgBufChan       chan []byte                // the channel we use to queue the messages
+	connIndex           utils.Dictionary[net.Conn] // index of the connection objects against the ids of the devices represented thusly
+	rabbitmqAmqpChannel *amqp.Channel
 }
 
-func NewDeviceSvr(logger *zap.Logger, endpoint string, capacity int, bufSize int, svrMsgBufSize int) (*DeviceSvr, error) {
+func NewDeviceSvr(
+	logger *zap.Logger,
+	endpoint string,
+	capacity int,
+	bufSize int,
+	svrMsgBufSize int,
+	rabbitmqAmqpChannel *amqp.Channel,
+) (*DeviceSvr, error) {
 	// holder struct
 	svr := DeviceSvr{
 		logger,
@@ -32,8 +41,9 @@ func NewDeviceSvr(logger *zap.Logger, endpoint string, capacity int, bufSize int
 		bufSize,
 		utils.Stack[*[]byte]{},
 		svrMsgBufSize,
-		make(chan utils.MessageWrapper),
-		utils.Dictionary[net.Conn]{}}
+		make(chan []byte),
+		utils.Dictionary[net.Conn]{},
+		rabbitmqAmqpChannel}
 
 	// init the stack we use to store the buffers
 	svr.sockOpBufStack.Init()
@@ -51,53 +61,29 @@ func NewDeviceSvr(logger *zap.Logger, endpoint string, capacity int, bufSize int
 
 // create and store our buffers
 func (s *DeviceSvr) Init() error {
-	// init the buffers we use for io socket operations
+	// init the buffers we use for io socket operations. double capacity - buf for send buf for recv for each socket
 	for i := 0; i < s.capacity; i++ {
 		buf := make([]byte, s.sockOpBufSize)
 		s.sockOpBufStack.Push(&buf)
 	}
-
-	// dial the rabbitmq server
-	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	// open the channel
-	ch, err := conn.Channel()
-	if err != nil {
-		return err
-	}
-	defer ch.Close()
-
-	// declare the exchange to which we're publishing to
-	err = ch.ExchangeDeclare(
-		config.DEVICEMSG_OUTPUT_CHANNEL, // name
-		"fanout",                        // type
-		true,                            // durable
-		false,                           // auto-deleted
-		false,                           // internal
-		false,                           // no-wait
-		nil,                             // arguments
-	)
-	if err != nil {
-		return err
-	}
-
-	// put it in the server struct and return
-	s.msgChannel = ch
 	return nil
 }
 
 // run the server, blocking
 func (s *DeviceSvr) Run() {
+	// start server listening for connections
 	ln, err := net.Listen("tcp", s.endpoint)
 	if err != nil {
 		s.logger.Fatal("error listening on %v: %v", zap.String("s.endpoint", s.endpoint), zap.Error(err))
 	} else {
 		s.logger.Info("device server listening on: %v", zap.String("s.endpoint", s.endpoint))
 	}
+
+	// start the output and input from the message broker
+	go s.pipeToBroker(config.MSGS_FROM_DEVICE_SVR)
+	go s.pipeFromBroker(config.MSGS_TO_DEVICE_SVR)
+
+	// start accepting device connections
 	for {
 		c, err := ln.Accept()
 		if err != nil {
@@ -106,7 +92,7 @@ func (s *DeviceSvr) Run() {
 		}
 		s.logger.Info("connection accepted on device svr...")
 		go func() {
-			err := s.intake(c)
+			err := s.deviceConnLoop(c)
 			if err != nil {
 				s.logger.Error("error in device connection loop: %v", zap.Error(err))
 			}
@@ -115,8 +101,8 @@ func (s *DeviceSvr) Run() {
 	}
 }
 
-// handle each connection
-func (s *DeviceSvr) intake(conn net.Conn) error {
+// receive connections and messages. Input from devices
+func (s *DeviceSvr) deviceConnLoop(conn net.Conn) error {
 
 	// get buffer for read operations
 	buf, err := s.sockOpBufStack.Pop()
@@ -126,7 +112,7 @@ func (s *DeviceSvr) intake(conn net.Conn) error {
 
 	// loop variables
 	var msg string = ""
-	var id string = ""
+	var id *string = nil
 	var recvd int = 0
 
 	// connection loop
@@ -155,26 +141,142 @@ func (s *DeviceSvr) intake(conn net.Conn) error {
 		recvd = 0
 
 		// set id if not already set
-		if id == "" {
-			err = utils.GetIdFromMessage(&msg, &id)
+		if id == nil {
+			id, err = utils.GetIdFromMessage(&msg)
 			if err != nil {
 				s.logger.Debug("error getting id from msg %v", zap.String("msg", msg))
 				continue
 			}
-			s.connIndex.Add(id, conn)
-			defer s.connIndex.Delete(id)
+			s.connIndex.Add(*id, conn)
+			defer s.connIndex.Delete(*id)
 		}
 
-		// send the messages to the relay
-		//s.svrMsgBufChan <- utils.MessageWrapper{Message: msg, ClientId: &id, RecvdTime: time.Now()}
-		err = s.msgChannel.Publish(
-			"logs", // exchange
-			"",     // routing key
-			false,  // mandatory
-			false,  // immediate
+		// marshal the struct into json then convert into byte array
+		bytes, err := json.Marshal(utils.MessageWrapper{Message: msg, ClientId: id, RecvdTime: time.Now()})
+		if err != nil {
+			return err
+		}
+
+		// send msg to channel
+		s.svrMsgBufChan <- bytes
+	}
+}
+
+// take messages from devices and publish them to broker.
+func (s *DeviceSvr) pipeToBroker(exchangeName string) {
+
+	// declare the device message output exchange
+	err := s.rabbitmqAmqpChannel.ExchangeDeclare(
+		exchangeName, // name
+		"fanout",     // type
+		true,         // durable
+		false,        // auto-deleted
+		false,        // internal
+		false,        // no-wait
+		nil,          // arguments
+	)
+	if err != nil {
+		s.logger.Fatal("error piping messages from message broker %v", zap.Error(err))
+	}
+
+	// loop over channel and pipe messages into the rabbitmq exchange.
+	for bytes := range s.svrMsgBufChan {
+		// publish our JSON message to the exchange which handles messages from devices
+		err := s.rabbitmqAmqpChannel.Publish(
+			exchangeName, // exchange
+			"",           // routing key
+			false,        // mandatory
+			false,        // immediate
 			amqp.Publishing{
 				ContentType: "text/plain",
-				Body:        []byte(body),
+				Body:        []byte(bytes),
 			})
+		if err != nil {
+			s.logger.Error("error piping messages into message broker %v", zap.Error(err))
+		}
+	}
+}
+
+// Take messages from the broker and send them to devices.
+func (s *DeviceSvr) pipeFromBroker(exchangeName string) {
+
+	// declare exchange we are taking messages from.
+	err := s.rabbitmqAmqpChannel.ExchangeDeclare(
+		exchangeName, // name
+		"fanout",     // type
+		true,         // durable
+		false,        // auto-deleted
+		false,        // internal
+		false,        // no-wait
+		nil,          // arguments
+	)
+	if err != nil {
+		s.logger.Fatal("error piping messages from message broker %v", zap.Error(err))
+	}
+
+	// declare a queue onto the exchange above
+	q, err := s.rabbitmqAmqpChannel.QueueDeclare(
+		"",    // name -
+		false, // durable
+		false, // delete when unused
+		true,  // exclusive
+		false, // no-wait
+		nil,   // arguments
+	)
+	if err != nil {
+		s.logger.Fatal("error declaring queue %v", zap.Error(err))
+	}
+
+	// bind the queue onto the exchange
+	err = s.rabbitmqAmqpChannel.QueueBind(
+		q.Name,       // queue name
+		"",           // routing key
+		exchangeName, // exchange
+		false,
+		nil,
+	)
+	if err != nil {
+		s.logger.Error("error binding queue %v", zap.Error(err))
+	}
+
+	// get a golang channel we can read messages from.
+	msgs, err := s.rabbitmqAmqpChannel.Consume(
+		q.Name, // name - WE DEPEND ON THE QUEUE BEING NAMED THE SAME AS THE EXCHANGE - ONLY ONE Q CONSUMING FROM THIS EXCHANGE
+		"",     // consumer
+		true,   // auto-ack
+		false,  // exclusive
+		false,  // no-local
+		false,  // no-wait
+		nil,    // args
+	)
+	if err != nil {
+		s.logger.Error("error consuming from queue %v", zap.Error(err))
+	}
+
+	// connection loop
+	for d := range msgs {
+
+		// this is the message revceived from broker
+		message := string(d.Body)
+
+		// extract the device the message pertains to
+		dev_id, err := utils.GetIdFromMessage(&message)
+		if err != nil {
+			s.logger.Error("error processing message from device", zap.Error(err))
+			continue
+		}
+
+		// verify device connection, get the connection object
+		devConn, devConnOk := s.connIndex.Get(*dev_id)
+		if !devConnOk {
+			s.logger.Error("message sent for device not connected")
+			continue
+		}
+
+		// send the requested message to the device
+		_, err = (*devConn).Write([]byte(message))
+		if err != nil {
+			s.logger.Error("received message destined for device not connected")
+		}
 	}
 }
