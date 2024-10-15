@@ -17,7 +17,7 @@ import (
 	zap "go.uber.org/zap"                      // logger
 )
 
-type ApiSvr struct {
+type WsApiSvr struct {
 	logger               *zap.Logger                      // logger
 	endpoint             string                           // IP + port, ex: "192.168.1.77:9047"
 	svrMsgBufChan        chan utils.MessageWrapper        // channel we use to queue messages
@@ -27,13 +27,13 @@ type ApiSvr struct {
 	connectedDevicesList utils.ApiRes_WS                  // currently just holds the connected device list
 }
 
-func NewApiSvr(
+func NewWsApiSvr(
 	logger *zap.Logger,
 	endpoint string,
 	rabbitmqAmqpChannel *amqp.Channel,
-) (*ApiSvr, error) {
+) (*WsApiSvr, error) {
 	// create the struct
-	svr := ApiSvr{
+	svr := WsApiSvr{
 		logger,
 		endpoint,
 		make(chan utils.MessageWrapper),
@@ -45,7 +45,7 @@ func NewApiSvr(
 }
 
 // run the server
-func (s *ApiSvr) Run() {
+func (s *WsApiSvr) Run() {
 	// listen tcp
 	l, err := net.Listen("tcp", s.endpoint)
 	if err != nil {
@@ -69,7 +69,7 @@ func (s *ApiSvr) Run() {
 }
 
 // func called for each connection to handle the websocket connection request, calls and blocks on connHandler
-func (s *ApiSvr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *WsApiSvr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// accept wenbsocket connection
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
@@ -112,7 +112,7 @@ func (s *ApiSvr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
  */
 
 // handle one connection.
-func (s *ApiSvr) connHandler(conn *websocket.Conn) error {
+func (s *WsApiSvr) connHandler(conn *websocket.Conn) error {
 
 	// req = reusable holder for string, gen id as an arbitrary number
 	var req utils.ApiReq_WS
@@ -153,7 +153,7 @@ func (s *ApiSvr) connHandler(conn *websocket.Conn) error {
 }
 
 // take messages from devices and publish them to broker.
-func (s *ApiSvr) pipeMessagesToBroker(exchangeName string) {
+func (s *WsApiSvr) pipeMessagesToBroker(exchangeName string) {
 
 	// declare the device message output exchange
 	err := s.rabbitmqAmqpChannel.ExchangeDeclare(
@@ -195,7 +195,7 @@ func (s *ApiSvr) pipeMessagesToBroker(exchangeName string) {
 }
 
 // Take messages from the broker and send them to clients. Messages from devices
-func (s *ApiSvr) pipeConnectedDevicesFromBroker(exchangeName string) {
+func (s *WsApiSvr) pipeConnectedDevicesFromBroker(exchangeName string) {
 
 	// declare exchange we are taking messages from.
 	err := s.rabbitmqAmqpChannel.ExchangeDeclare(

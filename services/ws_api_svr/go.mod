@@ -1,4 +1,4 @@
-module dvr_api-go-microservices/services/api_svr
+module dvr_api-go-microservices/services/ws_api_svr
 
 go 1.22.1
 

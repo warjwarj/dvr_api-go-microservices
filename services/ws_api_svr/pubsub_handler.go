@@ -15,13 +15,13 @@ import (
 // record and index connected devices and clients
 type PubSubHandler struct {
 	logger              *zap.Logger                  //logger
-	apiSvr              *ApiSvr                      // api svr
+	apiSvr              *WsApiSvr                    // api svr
 	rabbitmqAmqpChannel *amqp.Channel                // channel to msg broker
 	subscriptions       map[string]map[string]string // device ids against connections. Use internal map just for indexing the keys
 }
 
 // constructor
-func NewPubSubHandler(logger *zap.Logger, apiSvr *ApiSvr, rabbitmqAmqpChannel *amqp.Channel) (*PubSubHandler, error) {
+func NewPubSubHandler(logger *zap.Logger, apiSvr *WsApiSvr, rabbitmqAmqpChannel *amqp.Channel) (*PubSubHandler, error) {
 	r := &PubSubHandler{
 		logger:              logger,
 		apiSvr:              apiSvr,

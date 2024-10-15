@@ -49,7 +49,7 @@ func main() {
 	defer rabbitmqAmqpChannel.Close()
 
 	// create our device server struct
-	apiSvr, err := NewApiSvr(logger, config.API_SVR_ENDPOINT, rabbitmqAmqpChannel)
+	apiSvr, err := NewWsApiSvr(logger, config.API_SVR_ENDPOINT, rabbitmqAmqpChannel)
 	if err != nil {
 		logger.Fatal("fatal error creating device server: %v", zap.Error(err))
 		return
