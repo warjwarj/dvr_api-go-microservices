@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"time"
@@ -17,61 +18,30 @@ import (
 )
 
 type ApiSvr struct {
-	logger              *zap.Logger                      // logger
-	endpoint            string                           // IP + port, ex: "192.168.1.77:9047"
-	capacity            int                              // num of connections
-	sockOpBufSize       int                              // how much memory do we give each connection to perform send/recv operations
-	sockOpBufStack      utils.Stack[*[]byte]             // memory region we give each conn to so send/recv
-	svrMsgBufSize       int                              // how many messages can we queue on the server at once
-	svrMsgBufChan       chan utils.MessageWrapper        // channel we use to queue messages
-	svrSubReqBufChan    chan utils.SubReqWrapper         // channel we use to queue subscription requests
-	connIndex           utils.Dictionary[websocket.Conn] // index the connection objects against the ids of the clients represented thusly
-	getConnectedDevices func() []string                  // function to retreive an index of connected devices
-	rabbitmqAmqpChannel *amqp.Channel                    // channel connected to the broker
+	logger               *zap.Logger                      // logger
+	endpoint             string                           // IP + port, ex: "192.168.1.77:9047"
+	svrMsgBufChan        chan utils.MessageWrapper        // channel we use to queue messages
+	svrSubReqBufChan     chan utils.SubReqWrapper         // channel we use to queue subscription requests
+	connIndex            utils.Dictionary[websocket.Conn] // index the connection objects against the ids of the clients represented thusly
+	rabbitmqAmqpChannel  *amqp.Channel                    // channel connected to the broker
+	connectedDevicesList utils.ApiRes_WS                  // currently just holds the connected device list
 }
 
 func NewApiSvr(
 	logger *zap.Logger,
 	endpoint string,
-	capacity int,
-	bufSize int,
-	svrMsgBufSize int,
-	getConnectedDevices func() []string,
 	rabbitmqAmqpChannel *amqp.Channel,
 ) (*ApiSvr, error) {
 	// create the struct
 	svr := ApiSvr{
 		logger,
 		endpoint,
-		capacity,
-		bufSize,
-		utils.Stack[*[]byte]{},
-		svrMsgBufSize,
 		make(chan utils.MessageWrapper),
 		make(chan utils.SubReqWrapper),
 		utils.Dictionary[websocket.Conn]{},
-		getConnectedDevices,
-		rabbitmqAmqpChannel}
-
-	// init things that need initing
-	svr.sockOpBufStack.Init()
-	svr.connIndex.Init(capacity)
-
-	// create and store the buffers
-	for i := 0; i < svr.capacity; i++ {
-		buf := make([]byte, svr.sockOpBufSize)
-		svr.sockOpBufStack.Push(&buf)
-	}
+		rabbitmqAmqpChannel,
+		utils.ApiRes_WS{ConnectedDevicesList: []string{}}}
 	return &svr, nil
-}
-
-// create and store our buffers
-func (s *ApiSvr) Init() error {
-	for i := 0; i < s.capacity; i++ {
-		buf := make([]byte, s.sockOpBufSize)
-		s.sockOpBufStack.Push(&buf)
-	}
-	return nil
 }
 
 // run the server
@@ -81,12 +51,12 @@ func (s *ApiSvr) Run() {
 	if err != nil {
 		s.logger.Fatal("error listening on %v: %v", zap.String("s.endpoint", s.endpoint), zap.Error(err))
 	} else {
-		s.logger.Info("websocket server listening on: %v", zap.String("s.endpoint", s.endpoint))
+		s.logger.Info("api server listening on: %v", zap.String("s.endpoint", s.endpoint))
 	}
 
-	// start the message broker input and output
-	go s.pipeToBroker(config.MSGS_FROM_API_SVR)
-	go s.pipeFromBroker(config.MSGS_TO_API_SVR)
+	// start the output to message broker
+	go s.pipeMessagesToBroker(config.MSGS_FROM_API_SVR)
+	go s.pipeConnectedDevicesFromBroker(config.CONNECTED_DEVICES_LIST)
 
 	// accept http on the port open for tcp above
 	httpSvr := &http.Server{
@@ -94,7 +64,7 @@ func (s *ApiSvr) Run() {
 	}
 	err = httpSvr.Serve(l)
 	if err != nil {
-		s.logger.Fatal("error serving websocket server: %v", zap.Error(err))
+		s.logger.Fatal("error serving api server: %v", zap.Error(err))
 	}
 }
 
@@ -164,18 +134,17 @@ func (s *ApiSvr) connHandler(conn *websocket.Conn) error {
 			return nil
 		}
 
-		// // if they have send a request for the connected devices list then oblige
-		// if req.GetConnectedDevices {
-		// 	res = utils.ApiRes_WS{s.getConnectedDevices()}
-		// 	wsjson.Write(context.TODO(), conn, &res)
-		// }
+		// if they have send a request for the connected devices list then oblige
+		if req.GetConnectedDevices {
+			wsjson.Write(context.TODO(), conn, &s.connectedDevicesList)
+		}
 
 		// register the subscription request
 		s.svrSubReqBufChan <- utils.SubReqWrapper{ClientId: &id, NewDevlist: req.Subscriptions, OldDevlist: subscriptions}
 		subscriptions = make([]string, len(req.Subscriptions))
 		copy(subscriptions, req.Subscriptions)
 
-		// todo pass the array instead of the induvidual message
+		// send the message to the function which handles sending to message broker
 		for _, val := range req.Messages {
 			s.svrMsgBufChan <- utils.MessageWrapper{val, &id, time.Now()}
 		}
@@ -184,7 +153,7 @@ func (s *ApiSvr) connHandler(conn *websocket.Conn) error {
 }
 
 // take messages from devices and publish them to broker.
-func (s *ApiSvr) pipeToBroker(exchangeName string) {
+func (s *ApiSvr) pipeMessagesToBroker(exchangeName string) {
 
 	// declare the device message output exchange
 	err := s.rabbitmqAmqpChannel.ExchangeDeclare(
@@ -201,9 +170,16 @@ func (s *ApiSvr) pipeToBroker(exchangeName string) {
 	}
 
 	// loop over channel and pipe messages into the rabbitmq exchange.
-	for bytes := range s.svrMsgBufChan {
+	for msgWrap := range s.svrMsgBufChan {
+
+		// get json bytes so we can send them through the message broker
+		bytes, err := json.Marshal(msgWrap)
+		if err != nil {
+			s.logger.Error("error getting bytes from message wrapper struct: %v", zap.Error(err))
+		}
+
 		// publish our JSON message to the exchange which handles messages from devices
-		err := s.rabbitmqAmqpChannel.Publish(
+		err = s.rabbitmqAmqpChannel.Publish(
 			exchangeName, // exchange
 			"",           // routing key
 			false,        // mandatory
@@ -218,8 +194,8 @@ func (s *ApiSvr) pipeToBroker(exchangeName string) {
 	}
 }
 
-// Take messages from the broker and send them to clients.
-func (s *ApiSvr) pipeFromBroker(exchangeName string) {
+// Take messages from the broker and send them to clients. Messages from devices
+func (s *ApiSvr) pipeConnectedDevicesFromBroker(exchangeName string) {
 
 	// declare exchange we are taking messages from.
 	err := s.rabbitmqAmqpChannel.ExchangeDeclare(
@@ -276,6 +252,10 @@ func (s *ApiSvr) pipeFromBroker(exchangeName string) {
 
 	// connection loop
 	for d := range msgs {
-		s.svrMsgBufChan <- d.Body
+		// this is the message revceived from broker
+		err := json.Unmarshal(d.Body, &s.connectedDevicesList)
+		if err != nil {
+			s.logger.Error("received erroneous value from message broker, couldn't unmarshal into message wrapper")
+		}
 	}
 }

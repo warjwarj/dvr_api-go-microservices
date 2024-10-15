@@ -54,5 +54,9 @@ func main() {
 	}
 
 	// run the server
-	devSvr.Run()
+	go devSvr.Run()
+
+	// stop program from exiting
+	var forever chan struct{}
+	<-forever
 }

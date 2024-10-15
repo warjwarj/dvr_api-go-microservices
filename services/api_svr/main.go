@@ -49,12 +49,23 @@ func main() {
 	defer rabbitmqAmqpChannel.Close()
 
 	// create our device server struct
-	devSvr, err := NewDeviceSvr(logger, config.DEVICE_SVR_ENDPOINT, config.CAPACITY, config.BUF_SIZE, config.SVR_MSGBUF_SIZE, rabbitmqAmqpChannel)
+	apiSvr, err := NewApiSvr(logger, config.API_SVR_ENDPOINT, rabbitmqAmqpChannel)
 	if err != nil {
 		logger.Fatal("fatal error creating device server: %v", zap.Error(err))
 		return
 	}
 
-	// run the server
-	devSvr.Run()
+	// create the subscription handler
+	subHandler, err := NewPubSubHandler(logger, apiSvr, rabbitmqAmqpChannel)
+	if err != nil {
+		logger.Fatal("fatal error creating relay struct: %v", zap.Error(err))
+	}
+
+	// handle subscriptions and run the server
+	go subHandler.Run()
+	go apiSvr.Run()
+
+	// stop program from exiting
+	var forever chan struct{}
+	<-forever
 }

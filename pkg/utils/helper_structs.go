@@ -23,7 +23,7 @@ type SubReqWrapper struct {
 	OldDevlist []string
 }
 
-// pass messages out of servers into handlers
+// represent a message as it was sent from a client, before adulteration.
 type MessageWrapper struct {
 	Message   string    // text the tcp client sent
 	ClientId  *string   // index which the message sender with in the connIndex of the server

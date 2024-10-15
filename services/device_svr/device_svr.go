@@ -6,23 +6,24 @@ import (
 	"net"
 	"time"
 
-	"dvr_api-go-microservices/pkg/config"
-	"dvr_api-go-microservices/pkg/utils" // our shared utils package
+	config "dvr_api-go-microservices/pkg/config"
+	utils "dvr_api-go-microservices/pkg/utils" // our shared utils package
 
 	amqp "github.com/rabbitmq/amqp091-go" // rabbitmq import
 	zap "go.uber.org/zap"
 )
 
 type DeviceSvr struct {
-	logger              *zap.Logger
-	endpoint            string                     // IP + port, ex: "192.168.1.77:9047"
-	capacity            int                        // num of connections
-	sockOpBufSize       int                        // how much memory do we give each connection to perform send/recv operations
-	sockOpBufStack      utils.Stack[*[]byte]       // memory region we give each conn to so send/recv
-	svrMsgBufSize       int                        // how many messages can we queue on the server at once
-	svrMsgBufChan       chan []byte                // the channel we use to queue the messages
-	connIndex           utils.Dictionary[net.Conn] // index of the connection objects against the ids of the devices represented thusly
-	rabbitmqAmqpChannel *amqp.Channel
+	logger                *zap.Logger
+	endpoint              string                     // IP + port, ex: "192.168.1.77:9047"
+	capacity              int                        // num of connections
+	sockOpBufSize         int                        // how much memory do we give each connection to perform send/recv operations
+	sockOpBufStack        utils.Stack[*[]byte]       // memory region we give each conn to so send/recv
+	svrMsgBufSize         int                        // how many messages can we queue on the server at once
+	svrMsgBufChan         chan []byte                // the channel we use to queue the messages
+	svrRegisterChangeChan chan struct{}              // fire a struct down this channel each time a device connects or disconnects
+	connIndex             utils.Dictionary[net.Conn] // index of the connection objects against the ids of the devices represented thusly
+	rabbitmqAmqpChannel   *amqp.Channel              // tcp connection with rabbitmq server
 }
 
 func NewDeviceSvr(
@@ -42,6 +43,7 @@ func NewDeviceSvr(
 		utils.Stack[*[]byte]{},
 		svrMsgBufSize,
 		make(chan []byte),
+		make(chan struct{}),
 		utils.Dictionary[net.Conn]{},
 		rabbitmqAmqpChannel}
 
@@ -80,8 +82,9 @@ func (s *DeviceSvr) Run() {
 	}
 
 	// start the output and input from the message broker
-	go s.pipeToBroker(config.MSGS_FROM_DEVICE_SVR)
-	go s.pipeFromBroker(config.MSGS_TO_DEVICE_SVR)
+	go s.pipeMessagesToBroker(config.MSGS_FROM_DEVICE_SVR)
+	go s.pipeMessagesFromBroker(config.MSGS_FROM_API_SVR)
+	go s.pipeConnectedDevicesToBroker(config.CONNECTED_DEVICES_LIST)
 
 	// start accepting device connections
 	for {
@@ -147,8 +150,16 @@ func (s *DeviceSvr) deviceConnLoop(conn net.Conn) error {
 				s.logger.Debug("error getting id from msg %v", zap.String("msg", msg))
 				continue
 			}
+
+			// add to conn index and notify of connection
 			s.connIndex.Add(*id, conn)
-			defer s.connIndex.Delete(*id)
+			s.svrRegisterChangeChan <- struct{}{}
+
+			// remove from index and notify of disconnection
+			defer func() {
+				s.connIndex.Delete(*id)
+				s.svrRegisterChangeChan <- struct{}{}
+			}()
 		}
 
 		// marshal the struct into json then convert into byte array
@@ -162,8 +173,8 @@ func (s *DeviceSvr) deviceConnLoop(conn net.Conn) error {
 	}
 }
 
-// take messages from devices and publish them to broker.
-func (s *DeviceSvr) pipeToBroker(exchangeName string) {
+// publish device messages to broker
+func (s *DeviceSvr) pipeMessagesToBroker(exchangeName string) {
 
 	// declare the device message output exchange
 	err := s.rabbitmqAmqpChannel.ExchangeDeclare(
@@ -197,8 +208,51 @@ func (s *DeviceSvr) pipeToBroker(exchangeName string) {
 	}
 }
 
+// publish device messages to broker
+func (s *DeviceSvr) pipeConnectedDevicesToBroker(exchangeName string) {
+
+	// declare the device message output exchange
+	err := s.rabbitmqAmqpChannel.ExchangeDeclare(
+		exchangeName, // name
+		"fanout",     // type
+		true,         // durable
+		false,        // auto-deleted
+		false,        // internal
+		false,        // no-wait
+		nil,          // arguments
+	)
+	if err != nil {
+		s.logger.Fatal("error piping messages from message broker %v", zap.Error(err))
+	}
+
+	var res utils.ApiRes_WS
+
+	for range s.svrRegisterChangeChan {
+
+		res.ConnectedDevicesList = s.connIndex.GetAllKeys()
+		bytes, err := json.Marshal(res)
+		if err != nil {
+			s.logger.Error("error mashalling into json %v", zap.Error(err))
+		}
+
+		// publish our JSON message to the exchange which handles messages from devices
+		err = s.rabbitmqAmqpChannel.Publish(
+			exchangeName, // exchange
+			"",           // routing key
+			false,        // mandatory
+			false,        // immediate
+			amqp.Publishing{
+				ContentType: "text/plain",
+				Body:        []byte(bytes),
+			})
+		if err != nil {
+			s.logger.Error("error piping connected device list into message broker %v", zap.Error(err))
+		}
+	}
+}
+
 // Take messages from the broker and send them to devices.
-func (s *DeviceSvr) pipeFromBroker(exchangeName string) {
+func (s *DeviceSvr) pipeMessagesFromBroker(exchangeName string) {
 
 	// declare exchange we are taking messages from.
 	err := s.rabbitmqAmqpChannel.ExchangeDeclare(
@@ -257,10 +311,14 @@ func (s *DeviceSvr) pipeFromBroker(exchangeName string) {
 	for d := range msgs {
 
 		// this is the message revceived from broker
-		message := string(d.Body)
+		var msgWrap utils.MessageWrapper
+		err := json.Unmarshal(d.Body, &msgWrap)
+		if err != nil {
+			s.logger.Error("received erroneous value from message broker, couldn't unmarshal into message wrapper")
+		}
 
 		// extract the device the message pertains to
-		dev_id, err := utils.GetIdFromMessage(&message)
+		dev_id, err := utils.GetIdFromMessage(&msgWrap.Message)
 		if err != nil {
 			s.logger.Error("error processing message from device", zap.Error(err))
 			continue
@@ -269,12 +327,12 @@ func (s *DeviceSvr) pipeFromBroker(exchangeName string) {
 		// verify device connection, get the connection object
 		devConn, devConnOk := s.connIndex.Get(*dev_id)
 		if !devConnOk {
-			s.logger.Error("message sent for device not connected")
+			s.logger.Warn("message sent for device not connected")
 			continue
 		}
 
 		// send the requested message to the device
-		_, err = (*devConn).Write([]byte(message))
+		_, err = (*devConn).Write([]byte(msgWrap.Message))
 		if err != nil {
 			s.logger.Error("received message destined for device not connected")
 		}
