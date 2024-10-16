@@ -10,28 +10,34 @@ services:
     image: rabbitmq:3
     container_name: rabbitmq
     ports:
-     - "5672:5672"
-     - "15672:15672"
+      - "5672:5672"
+      - "15672:15672"
   # device server, intake device messages
   device_svr:  
     build:
       context: ./services/device_svr
       dockerfile: device_svr.Dockerfile
-      ports:
-       - "9047:9047"
+    ports:
+      - "9047:9047"
   # api server, point of contact for api clients
-  api_svr:  
+  ws_api_svr:  
     build:
-      context: ./services/api_svr
-      dockerfile: api_svr.Dockerfile
-      ports:
-       - "9046:9046"
+      context: ./services/ws_api_svr
+      dockerfile: ws_api_svr.Dockerfile
+    ports:
+      - "9046:9046"
+  http_api_svr:  
+    build:
+      context: ./services/http_api_svr
+      dockerfile: http_api_svr.Dockerfile
+    ports:
+      - "9046:9046"
   # database proxy, access point for databases
-  dbproxy_svr:  
-    build:
-      context: ./services/dbproxy_svr
-      dockerfile: dbproxy_svr.Dockerfile
-      ports:
-       - "9045:9045"
+  # dbproxy_svr:  
+  #   build:
+  #     context: ./services/dbproxy_svr
+  #     dockerfile: dbproxy_svr.Dockerfile
+  #   ports:
+  #     - "9045:9045"
 
 # docker run -d -it --rm --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3

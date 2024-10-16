@@ -14,7 +14,7 @@ RUN go mod download
 COPY *.go ./
 
 # compile the program out into the WORKDIR. params: CGO_ENABLED = 'c language go', GOOS = 'go operating system'
-RUN CGO_ENABLED=0 GOOS=linux go build -o /api_svr
+RUN CGO_ENABLED=0 GOOS=linux go build -o /ws_api_svr
 
 # signal to the
-CMD ["/api_svr"]
+CMD ["/ws_api_svr"]

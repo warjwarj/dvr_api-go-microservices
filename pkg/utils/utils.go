@@ -156,3 +156,39 @@ func GetIdFromMessage(message *string) (*string, error) {
 	}
 	return nil, fmt.Errorf("couldn't extract id from: %v", message)
 }
+
+/*
+~~~~~~~~~~~~~~~
+MONGODB HELPERS
+~~~~~~~~~~~~~~~
+*/
+
+// connection to the mongodb instance
+type MongoDBConnection struct {
+	Logger *zap.Logger
+	Client *mongo.Client // connection to the db
+	Uri    string        // endpoint
+	CbName string        // name of the database inside mongo
+	Lock   sync.Mutex    // lock for the db connection
+}
+
+// constructor
+func NewDBConnection(logger *zap.Logger, uri string, dbName string) (*MongoDBConnection, error) {
+	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
+	if err != nil {
+		return nil, err
+	}
+	var result bson.M
+	// ping db to check the connection
+	err = client.Database(dbName).RunCommand(context.TODO(), bson.D{{"ping", 1}}).Decode(&result)
+	if err != nil {
+		return nil, err
+	}
+	logger.Info("database %v connected successfully", zap.String("dbName", dbName))
+	return &MongoDBConnection{
+		logger: logger,
+		client: client,
+		uri:    uri,
+		dbName: dbName,
+	}, nil
+}
