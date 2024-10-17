@@ -5,17 +5,22 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"time"
 
-	"go.uber.org/zap"
+	"dvr_api-go-microservices/pkg/config"
+	utils "dvr_api-go-microservices/pkg/utils"
+
+	bson "go.mongodb.org/mongo-driver/bson"
+	zap "go.uber.org/zap"
 )
 
 type HttpApiSvr struct {
 	logger   *zap.Logger
 	endpoint string // IP + port, ex: "192.168.1.77:9047"
-	dbc      *DBConnection
+	dbc      *utils.MongoDBConnection
 }
 
-func NewHttpSvr(logger *zap.Logger, endpoint string, dbc *DBConnection) (*HttpApiSvr, error) {
+func NewHttpSvr(logger *zap.Logger, endpoint string, dbc *utils.MongoDBConnection) (*HttpApiSvr, error) {
 	// create the struct
 	svr := HttpApiSvr{
 		logger,
@@ -53,7 +58,7 @@ func (s *HttpApiSvr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !PROD {
+	if !config.PROD {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 	} else {
 		s.logger.Fatal("cors enabled on http server, disable in prod")
@@ -67,14 +72,14 @@ func (s *HttpApiSvr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// unmarshal bytes into a struct we can work with
-	var req ApiRequest_HTTP
+	var req utils.ApiRequest_HTTP
 	err = json.Unmarshal(body, &req)
 	if err != nil {
 		s.logger.Warn("failed to unmarshal json: \n%v", zap.String("body", string(body)))
 	}
 
 	// query the database
-	res, err := s.dbc.QueryMsgHistory(req.Devices, req.Before, req.After)
+	res, err := s.QueryMsgHistory(req.Devices, req.Before, req.After)
 	if err != nil {
 		s.logger.Error("failed to query msg history: %v", zap.Error(err))
 	}
@@ -90,4 +95,46 @@ func (s *HttpApiSvr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(bytes)
+}
+
+func (s *HttpApiSvr) QueryMsgHistory(devices []string, before time.Time, after time.Time) ([]bson.M, error) {
+
+	// IMPLEMENT HTTP QUERY TO DB PROXY
+
+	// // might be worth storing this to avoid redeclaration upon each function call
+	// coll := s.dbc.Client.Database(s.dbc.DbName).Collection("devices")
+
+	// // query filter. Device id in devices, and packet_time between the two dates passed
+	// filter := bson.D{
+	// 	{"DeviceId", bson.D{
+	// 		{"$in", devices},
+	// 	}},
+	// 	{"MsgHistory", bson.D{
+	// 		{"$elemMatch", bson.D{
+	// 			{"receivedTime", bson.D{
+	// 				{"$gte", after},
+	// 				{"$lt", before},
+	// 			}},
+	// 		}},
+	// 	}},
+	// }
+
+	// // query using above. Exclude _id field
+	// cursor, err := coll.Find(context.Background(), filter, options.Find().SetProjection(bson.M{"_id": 0}))
+	// if err != nil {
+	// 	return nil, fmt.Errorf("error querying database: %v", err)
+	// }
+
+	// // iterate over the cursor returned and return docuements that match the query
+	// var documents []bson.M
+	// for cursor.Next(context.Background()) {
+	// 	var result bson.M
+	// 	err := cursor.Decode(&result)
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// 	documents = append(documents, result)
+	// }
+	// return documents, nil
+	return nil, nil
 }

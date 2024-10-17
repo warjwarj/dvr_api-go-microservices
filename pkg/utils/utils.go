@@ -1,12 +1,18 @@
 package utils
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	bson "go.mongodb.org/mongo-driver/bson"
+	mongo "go.mongodb.org/mongo-driver/mongo"
+	options "go.mongodb.org/mongo-driver/mongo/options"
+	zap "go.uber.org/zap"
 )
 
 /*
@@ -168,7 +174,7 @@ type MongoDBConnection struct {
 	Logger *zap.Logger
 	Client *mongo.Client // connection to the db
 	Uri    string        // endpoint
-	CbName string        // name of the database inside mongo
+	DbName string        // name of the database inside mongo
 	Lock   sync.Mutex    // lock for the db connection
 }
 
@@ -186,9 +192,9 @@ func NewDBConnection(logger *zap.Logger, uri string, dbName string) (*MongoDBCon
 	}
 	logger.Info("database %v connected successfully", zap.String("dbName", dbName))
 	return &MongoDBConnection{
-		logger: logger,
-		client: client,
-		uri:    uri,
-		dbName: dbName,
+		Logger: logger,
+		Client: client,
+		Uri:    uri,
+		DbName: dbName,
 	}, nil
 }

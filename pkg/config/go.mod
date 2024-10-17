@@ -1,3 +1,3 @@
-module config
+module dvr_api-go-microservices/pkg/config
 
-go 1.22.1
+go 1.23

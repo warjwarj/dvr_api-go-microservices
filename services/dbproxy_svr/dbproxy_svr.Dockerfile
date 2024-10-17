@@ -1,20 +1,29 @@
 # syntax=docker/dockerfile:1
 
 # Build the application from source
-FROM golang:1.19 AS build-stage
+FROM golang:1.23 AS build-stage
 
 # set working directory
 WORKDIR /app
 
-# copy the mod file and download dependancies
-COPY go.mod go.sum ./
-RUN go mod download
+# Copy shared packages
+COPY ./pkg pkg
+
+# In the docker compose file we set build context to the root dir of the project, which means we have to specify this service's path from the root of the project. 
+# We copy the directory structure of the project on the host machine into the container as all imports are relative to the project structure, would break pkg imports otherwise.
+
+# Copy mod and sum files into the the container. 
+COPY ./services/dbproxy_svr/go.mod ./services/dbproxy_svr/go.sum /app/services/dbproxy_svr/
 
 # copy all code files
-COPY *.go ./
+COPY ./services/dbproxy_svr/*.go /app/services/dbproxy_svr/
+
+WORKDIR /app/services/dbproxy_svr
+RUN go mod tidy
+RUN go mod download
 
 # compile the program out into the WORKDIR. params: CGO_ENABLED = 'c language go', GOOS = 'go operating system'
-RUN CGO_ENABLED=0 GOOS=linux go build -o /dbproxy_svr
+RUN CGO_ENABLED=0 GOOS=linux go build -o /app/bin/dbproxy_svr.bin
 
-# signal to the
-CMD ["/dbproxy_svr"]
+# run the app
+CMD ["/app/bin/dbproxy_svr.bin"]
