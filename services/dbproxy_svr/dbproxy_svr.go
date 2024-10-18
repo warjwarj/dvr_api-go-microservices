@@ -21,21 +21,35 @@ import (
 
 type DbProxySvr struct {
 	logger              *zap.Logger
-	dbc                 *utils.MongoDBConnection
+	client              *mongo.Client
 	rabbitmqAmqpChannel *amqp.Channel
-	endpoint            string
+	uri                 string
+	dbName              string
 }
 
 func NewDbProxySvr(
-	logger *zap.Logger,
-	dbc *utils.MongoDBConnection,
-	rabbitmqAmqpChannel *amqp.Channel,
-	endpoint string,
+	logger *zap.Logger, // logger
+	rabbitmqAmqpChannel *amqp.Channel, // rabbitmq channel
+	uri string, // network location of the database
+	dbName string, // name of the database inside mongo
 ) (*DbProxySvr, error) {
+	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
+	if err != nil {
+		return nil, err
+	}
+	var result bson.M
+	// ping db to check the connection
+	err = client.Database(dbName).RunCommand(context.TODO(), bson.D{{"ping", 1}}).Decode(&result)
+	if err != nil {
+		return nil, err
+	}
+	logger.Info("database %v connected successfully", zap.String("dbName", dbName))
 	return &DbProxySvr{
 		logger:              logger,
-		dbc:                 dbc,
-		rabbitmqAmqpChannel: rabbitmqAmqpChannel}, nil
+		client:              client,
+		rabbitmqAmqpChannel: rabbitmqAmqpChannel,
+		uri:                 uri,
+		dbName:              dbName}, nil
 }
 
 func (dps *DbProxySvr) Run() {
@@ -45,11 +59,11 @@ func (dps *DbProxySvr) Run() {
 	go dps.pipeMessagesFromExchangeIntoDatabase(config.MSGS_FROM_API_SVR)
 
 	// listen tcp
-	l, err := net.Listen("tcp", dps.endpoint)
+	l, err := net.Listen("tcp", dps.uri)
 	if err != nil {
-		dps.logger.Fatal("error listening on %v: %v", zap.String("s.endpoint", dps.endpoint), zap.Error(err))
+		dps.logger.Fatal("error listening on %v: %v", zap.String("s.endpoint", dps.uri), zap.Error(err))
 	} else {
-		dps.logger.Info("http dbproxy_svr server listening on: %v", zap.String("s.endpoint", dps.endpoint))
+		dps.logger.Info("http dbproxy_svr server listening on: %v", zap.String("s.endpoint", dps.uri))
 	}
 
 	// accept http on tcp port we've just ran
@@ -113,7 +127,7 @@ func (dps *DbProxySvr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *DbProxySvr) QueryMsgHistory(devices []string, before time.Time, after time.Time) ([]bson.M, error) {
 
 	// might be worth storing this to avoid redeclaration upon each function call
-	coll := s.dbc.Client.Database(s.dbc.DbName).Collection("devices")
+	coll := s.client.Database(s.dbName).Collection("devices")
 
 	// query filter. Device id in devices, and packet_time between the two dates passed
 	filter := bson.D{
@@ -166,7 +180,7 @@ func (dps *DbProxySvr) RecordMessage_ToFromDevice(fromDevice bool, msg *utils.Me
 	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
 
 	// might be worth storing this to avoid redeclaration upon each function call
-	coll := dps.dbc.Client.Database(dps.dbc.DbName).Collection("devices")
+	coll := dps.client.Database(dps.dbName).Collection("devices")
 
 	// parse the time in the packet
 	packetTime, err := utils.GetDateFromMessage(msg.Message)

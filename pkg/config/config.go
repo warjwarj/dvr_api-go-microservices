@@ -27,4 +27,7 @@ const (
 	MSGS_FROM_DEVICE_SVR   string = "msgs_from_device_svr"   // sub to this to receive every message from every device
 	MSGS_FROM_API_SVR      string = "msgs_from_api_svr"      // sub to this to receive every message from every device
 	CONNECTED_DEVICES_LIST string = "connected_devices_list" // each time a device connects ot disconnects this exchange is supplied with a fresh list
+
+	// mongo vars
+	MESSAGE_DB string = "message_db"
 )
