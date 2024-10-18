@@ -19,7 +19,6 @@ COPY ./services/device_svr/go.mod ./services/device_svr/go.sum /app/services/dev
 COPY ./services/device_svr/*.go /app/services/device_svr/
 
 WORKDIR /app/services/device_svr
-RUN go mod tidy
 RUN go mod download
 
 # compile the program out into the WORKDIR. params: CGO_ENABLED = 'c language go', GOOS = 'go operating system'

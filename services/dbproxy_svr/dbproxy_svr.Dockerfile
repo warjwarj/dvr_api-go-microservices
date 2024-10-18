@@ -19,7 +19,6 @@ COPY ./services/dbproxy_svr/go.mod ./services/dbproxy_svr/go.sum /app/services/d
 COPY ./services/dbproxy_svr/*.go /app/services/dbproxy_svr/
 
 WORKDIR /app/services/dbproxy_svr
-RUN go mod tidy
 RUN go mod download
 
 # compile the program out into the WORKDIR. params: CGO_ENABLED = 'c language go', GOOS = 'go operating system'

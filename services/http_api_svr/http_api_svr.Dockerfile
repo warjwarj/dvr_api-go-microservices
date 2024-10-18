@@ -19,7 +19,6 @@ COPY ./services/http_api_svr/go.mod ./services/http_api_svr/go.sum /app/services
 COPY ./services/http_api_svr/*.go /app/services/http_api_svr/
 
 WORKDIR /app/services/http_api_svr
-RUN go mod tidy
 RUN go mod download
 
 # compile the program out into the WORKDIR. params: CGO_ENABLED = 'c language go', GOOS = 'go operating system'

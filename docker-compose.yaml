@@ -15,30 +15,30 @@ services:
   # device server, intake device messages
   device_svr:  
     build:
-      context: ./services/device_svr
-      dockerfile: device_svr.Dockerfile
+      context: ./
+      dockerfile: ./services/device_svr/device_svr.Dockerfile
     ports:
       - "9047:9047"
-  # # websocket api server, live communication and device messages
-  # ws_api_svr:  
-  #   build:
-  #     context: ./services/ws_api_svr
-  #     dockerfile: ws_api_svr.Dockerfile
-  #   ports:
-  #     - "9046:9046"
-  # # http api server, historic device data
-  # http_api_svr:  
-  #   build:
-  #     context: ./services/http_api_svr
-  #     dockerfile: http_api_svr.Dockerfile
-  #   ports:
-  #     - "9046:9046"
-  # # database proxy, access point for databases
-  # dbproxy_svr:  
-  #   build:
-  #     context: ./
-  #     dockerfile: ./services/dbproxy_svr/dbproxy_svr.Dockerfile
-  #   ports:
-  #     - "9045:9045"
+  # websocket api server, live communication and device messages
+  ws_api_svr:  
+    build:
+      context: ./
+      dockerfile: ./services/ws_api_svr/ws_api_svr.Dockerfile
+    ports:
+      - "9046:9046"
+  # http api server, historic device data
+  http_api_svr:  
+    build:
+      context: ./
+      dockerfile: ./services/http_api_svr/http_api_svr.Dockerfile
+    ports:
+      - "9045:9045"
+  # database proxy, access point for databases
+  dbproxy_svr:  
+    build:
+      context: ./
+      dockerfile: ./services/dbproxy_svr/dbproxy_svr.Dockerfile
+    ports:
+      - "27017:27017"
 
 # docker run -d -it --rm --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3
