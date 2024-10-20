@@ -25,12 +25,14 @@ type WsApiSvr struct {
 	connIndex            utils.Dictionary[websocket.Conn] // index the connection objects against the ids of the clients represented thusly
 	rabbitmqAmqpChannel  *amqp.Channel                    // channel connected to the broker
 	connectedDevicesList utils.ApiRes_WS                  // currently just holds the connected device list
+	capacity             int                              // amount of devices that can be connected
 }
 
 func NewWsApiSvr(
 	logger *zap.Logger,
 	endpoint string,
 	rabbitmqAmqpChannel *amqp.Channel,
+	capacity int,
 ) (*WsApiSvr, error) {
 	// create the struct
 	svr := WsApiSvr{
@@ -40,7 +42,13 @@ func NewWsApiSvr(
 		make(chan utils.SubReqWrapper),
 		utils.Dictionary[websocket.Conn]{},
 		rabbitmqAmqpChannel,
-		utils.ApiRes_WS{ConnectedDevicesList: []string{}}}
+		utils.ApiRes_WS{ConnectedDevicesList: []string{}},
+		capacity}
+
+	// init the connIndex
+	svr.connIndex.Init(capacity)
+
+	// return the server struct
 	return &svr, nil
 }
 

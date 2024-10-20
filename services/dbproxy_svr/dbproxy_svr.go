@@ -23,47 +23,37 @@ type DbProxySvr struct {
 	logger              *zap.Logger
 	client              *mongo.Client
 	rabbitmqAmqpChannel *amqp.Channel
-	uri                 string
 	dbName              string
+	restEndpoint        string
 }
 
 func NewDbProxySvr(
-	logger *zap.Logger, // logger
-	rabbitmqAmqpChannel *amqp.Channel, // rabbitmq channel
-	uri string, // network location of the database
-	dbName string, // name of the database inside mongo
+	logger *zap.Logger,
+	rabbitmqAmqpChannel *amqp.Channel,
+	client *mongo.Client,
+	dbName string,
+	restEndpoint string,
 ) (*DbProxySvr, error) {
-	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
-	if err != nil {
-		return nil, err
-	}
-	var result bson.M
-	// ping db to check the connection
-	err = client.Database(dbName).RunCommand(context.TODO(), bson.D{{"ping", 1}}).Decode(&result)
-	if err != nil {
-		return nil, err
-	}
-	logger.Info("database %v connected successfully", zap.String("dbName", dbName))
 	return &DbProxySvr{
 		logger:              logger,
 		client:              client,
 		rabbitmqAmqpChannel: rabbitmqAmqpChannel,
-		uri:                 uri,
-		dbName:              dbName}, nil
+		dbName:              dbName,
+		restEndpoint:        restEndpoint}, nil
 }
 
 func (dps *DbProxySvr) Run() {
 
 	// start piping messages into the database
-	go dps.pipeMessagesFromExchangeIntoDatabase(config.MSGS_FROM_DEVICE_SVR)
-	go dps.pipeMessagesFromExchangeIntoDatabase(config.MSGS_FROM_API_SVR)
+	go dps.pipeMessagesFromQueueIntoDatabase("from_device", config.MSGS_FROM_DEVICE_SVR)
+	go dps.pipeMessagesFromQueueIntoDatabase("from_api_client", config.MSGS_FROM_API_SVR)
 
 	// listen tcp
-	l, err := net.Listen("tcp", dps.uri)
+	l, err := net.Listen("tcp", dps.restEndpoint)
 	if err != nil {
-		dps.logger.Fatal("error listening on %v: %v", zap.String("s.endpoint", dps.uri), zap.Error(err))
+		dps.logger.Fatal("error listening on %v: %v", zap.String("dps.restEndpoint", dps.restEndpoint), zap.Error(err))
 	} else {
-		dps.logger.Info("http dbproxy_svr server listening on: %v", zap.String("s.endpoint", dps.uri))
+		dps.logger.Info("http dbproxy_svr server listening on:", zap.String("dps.restEndpoint", dps.restEndpoint))
 	}
 
 	// accept http on tcp port we've just ran
@@ -127,7 +117,7 @@ func (dps *DbProxySvr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *DbProxySvr) QueryMsgHistory(devices []string, before time.Time, after time.Time) ([]bson.M, error) {
 
 	// might be worth storing this to avoid redeclaration upon each function call
-	coll := s.client.Database(s.dbName).Collection("devices")
+	coll := s.client.Database(s.dbName).Collection("default_message_collection")
 
 	// query filter. Device id in devices, and packet_time between the two dates passed
 	filter := bson.D{
@@ -136,7 +126,7 @@ func (s *DbProxySvr) QueryMsgHistory(devices []string, before time.Time, after t
 		}},
 		{"MsgHistory", bson.D{
 			{"$elemMatch", bson.D{
-				{"receivedTime", bson.D{
+				{"ReceivedTime", bson.D{
 					{"$gte", after},
 					{"$lt", before},
 				}},
@@ -163,60 +153,8 @@ func (s *DbProxySvr) QueryMsgHistory(devices []string, before time.Time, after t
 	return documents, nil
 }
 
-// insert a record into the database
-func (dps *DbProxySvr) RecordMessage_ToFromDevice(fromDevice bool, msg *utils.MessageWrapper) (*mongo.UpdateResult, error) {
+func (dps *DbProxySvr) pipeMessagesFromQueueIntoDatabase(directionDescriptor string, exchangeName string) {
 
-	// record direction
-	var directionDescriptor string
-	switch fromDevice {
-	// msg sent by the device
-	case true:
-		directionDescriptor = "from device"
-	// msg sent by an API client to a device
-	case false:
-		directionDescriptor = "to device"
-	}
-
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-
-	// might be worth storing this to avoid redeclaration upon each function call
-	coll := dps.client.Database(dps.dbName).Collection("devices")
-
-	// parse the time in the packet
-	packetTime, err := utils.GetDateFromMessage(msg.Message)
-
-	// Create a new message
-	newMessage := utils.DeviceMessage_Schema{
-		RecvdTime:  msg.RecvdTime,
-		PacketTime: packetTime,
-		Message:    msg.Message,
-		Direction:  directionDescriptor,
-	}
-
-	devId, err := utils.GetIdFromMessage(&msg.Message)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't parse device id from message: %v", msg.Message)
-	}
-
-	// Update the document for the device, adding the new message to the messages array
-	filter := bson.M{"DeviceId": devId}
-	update := bson.M{
-		"$push": bson.M{
-			"MsgHistory": newMessage,
-		},
-	}
-
-	// perform update/insertion
-	updateResult, err := coll.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
-	if err != nil {
-		return updateResult, err
-	}
-
-	// return results of update/insertion
-	return updateResult, nil
-}
-
-func (dps *DbProxySvr) pipeMessagesFromExchangeIntoDatabase(exchangeName string) {
 	// declare exchange we are taking messages from.
 	err := dps.rabbitmqAmqpChannel.ExchangeDeclare(
 		exchangeName, // name
@@ -270,7 +208,57 @@ func (dps *DbProxySvr) pipeMessagesFromExchangeIntoDatabase(exchangeName string)
 		dps.logger.Error("error consuming from queue %v", zap.Error(err))
 	}
 
-	for msg := range msgs {
-		fmt.Println(msg)
+	// this is the collection we're going to be putting the messages into
+	coll := dps.client.Database(dps.dbName).Collection(config.MONGODB_MESSAGE_DEFAULT_COLLECTION)
+
+	// reuse the template
+	var msgSchema utils.Message_Schema
+
+	// loop over the device message channel and put it into the database
+	for d := range msgs {
+
+		// this is the message revceived from broker
+		var msgWrap utils.MessageWrapper
+		err := json.Unmarshal(d.Body, &msgWrap)
+		if err != nil {
+			dps.logger.Error("received erroneous value from message broker, couldn't unmarshal into message wrapper")
+		}
+
+		// parse id from message
+		devId, err := utils.GetIdFromMessage(&msgWrap.Message)
+		if err != nil {
+			dps.logger.Error("error consuming from queue", zap.Error(err))
+			continue
+		}
+
+		// parse the time in the packet
+		packetTime, err := utils.GetDateFromMessage(msgWrap.Message)
+		if err != nil {
+			dps.logger.Error("error consuming from queue", zap.Error(err))
+		}
+
+		// Create a new message
+		msgSchema = utils.Message_Schema{
+			RecvdTime:  msgWrap.RecvdTime,
+			PacketTime: packetTime,
+			Message:    msgWrap.Message,
+			Direction:  directionDescriptor,
+		}
+
+		// find the field in the document into which we're going to be inserting the message
+		filter := bson.M{"DeviceId": devId}
+		update := bson.M{
+			"$push": bson.M{
+				"MsgHistory": msgSchema,
+			},
+		}
+
+		fmt.Println(msgSchema)
+
+		// perform update/insertion
+		_, err = coll.UpdateOne(context.TODO(), filter, update, options.Update().SetUpsert(true))
+		if err != nil {
+			dps.logger.Error("error inserting message into database", zap.Error(err))
+		}
 	}
 }

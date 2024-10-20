@@ -1,31 +1,25 @@
 package main
 
 import (
-	"encoding/json"
 	"io"
 	"net"
 	"net/http"
-	"time"
 
 	"dvr_api-go-microservices/pkg/config"
-	utils "dvr_api-go-microservices/pkg/utils"
 
-	bson "go.mongodb.org/mongo-driver/bson"
 	zap "go.uber.org/zap"
 )
 
 type HttpApiSvr struct {
 	logger   *zap.Logger
 	endpoint string // IP + port, ex: "192.168.1.77:9047"
-	dbc      *utils.MongoDBConnection
 }
 
-func NewHttpSvr(logger *zap.Logger, endpoint string, dbc *utils.MongoDBConnection) (*HttpApiSvr, error) {
+func NewHttpSvr(logger *zap.Logger, endpoint string) (*HttpApiSvr, error) {
 	// create the struct
 	svr := HttpApiSvr{
 		logger,
 		endpoint,
-		dbc,
 	}
 	return &svr, nil
 }
@@ -52,89 +46,43 @@ func (s *HttpApiSvr) Run() {
 
 // serve the http API
 func (s *HttpApiSvr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// error handling
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusBadRequest)
+
+	// Set the URL of the destination server
+	destinationURL := "http://" + config.DBPROXY_SVR_ENDPOINT // Replace with actual URL
+
+	// Create a new request to forward to the destination server
+	req, err := http.NewRequest(http.MethodPost, destinationURL, r.Body)
+	if err != nil {
+		s.logger.Error("error creeating http request: %v", zap.Error(err))
+		http.Error(w, "Failed to create request", http.StatusInternalServerError)
 		return
 	}
 
-	if !config.PROD {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-	} else {
-		s.logger.Fatal("cors enabled on http server, disable in prod")
-	}
+	// Copy the headers from the original request to the new request
+	req.Header = r.Header.Clone()
 
-	// read the bytes
-	body, err := io.ReadAll(r.Body)
+	// Forward the request to the destination server
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
-		s.logger.Error("Unable to read request body", zap.Error(err))
+		s.logger.Error("error forwarding request to dbproxy: %v", zap.Error(err))
+		http.Error(w, "Failed to forward request", http.StatusBadGateway)
 		return
 	}
+	defer resp.Body.Close()
 
-	// unmarshal bytes into a struct we can work with
-	var req utils.ApiRequest_HTTP
-	err = json.Unmarshal(body, &req)
-	if err != nil {
-		s.logger.Warn("failed to unmarshal json: \n%v", zap.String("body", string(body)))
+	// Set the status code and headers for the response
+	w.WriteHeader(resp.StatusCode)
+	for key, values := range resp.Header {
+		for _, value := range values {
+			w.Header().Set(key, value)
+		}
 	}
 
-	// query the database
-	res, err := s.QueryMsgHistory(req.Devices, req.Before, req.After)
+	// Copy the response body from the destination server to the original response
+	_, err = io.Copy(w, resp.Body)
 	if err != nil {
-		s.logger.Error("failed to query msg history: %v", zap.Error(err))
+		s.logger.Error("failed to copy response body: %v", zap.Error(err))
+		http.Error(w, "Failed to copy response body", http.StatusInternalServerError)
 	}
-
-	// marshal back into json
-	bytes, err := json.Marshal(res)
-	if err != nil {
-		s.logger.Error("failed to marshal golang struct into json bytes: %v", zap.Error(err))
-		return
-	}
-
-	// set the response header Content-Type to application/json
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(bytes)
-}
-
-func (s *HttpApiSvr) QueryMsgHistory(devices []string, before time.Time, after time.Time) ([]bson.M, error) {
-
-	// IMPLEMENT HTTP QUERY TO DB PROXY
-
-	// // might be worth storing this to avoid redeclaration upon each function call
-	// coll := s.dbc.Client.Database(s.dbc.DbName).Collection("devices")
-
-	// // query filter. Device id in devices, and packet_time between the two dates passed
-	// filter := bson.D{
-	// 	{"DeviceId", bson.D{
-	// 		{"$in", devices},
-	// 	}},
-	// 	{"MsgHistory", bson.D{
-	// 		{"$elemMatch", bson.D{
-	// 			{"receivedTime", bson.D{
-	// 				{"$gte", after},
-	// 				{"$lt", before},
-	// 			}},
-	// 		}},
-	// 	}},
-	// }
-
-	// // query using above. Exclude _id field
-	// cursor, err := coll.Find(context.Background(), filter, options.Find().SetProjection(bson.M{"_id": 0}))
-	// if err != nil {
-	// 	return nil, fmt.Errorf("error querying database: %v", err)
-	// }
-
-	// // iterate over the cursor returned and return docuements that match the query
-	// var documents []bson.M
-	// for cursor.Next(context.Background()) {
-	// 	var result bson.M
-	// 	err := cursor.Decode(&result)
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	documents = append(documents, result)
-	// }
-	// return documents, nil
-	return nil, nil
 }

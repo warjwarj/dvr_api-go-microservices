@@ -1,8 +1,14 @@
 package main
 
 import (
-	config "dvr_api-go-microservices/pkg/config" // our shared config
+	"context"
 	"fmt"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+
+	config "dvr_api-go-microservices/pkg/config" // our shared config
 
 	amqp "github.com/rabbitmq/amqp091-go" // message broker
 	zap "go.uber.org/zap"                 // logger
@@ -29,7 +35,7 @@ func main() {
 	defer logger.Sync() // flushes buffer, if any
 
 	// dial the rabbitmq server
-	rabbitmqAmqpConnection, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+	rabbitmqAmqpConnection, err := amqp.Dial(config.RABBITMQ_AMQP_ENDPOINT)
 	if err != nil {
 		logger.Fatal("fatal error dialing rabbitmq server: %v", zap.Error(err))
 		return
@@ -44,8 +50,22 @@ func main() {
 	}
 	defer rabbitmqAmqpChannel.Close()
 
+	// connect to the mongodb instance
+	mongoClient, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(config.MONGODB_ENDPOINT))
+	if err != nil {
+		logger.Fatal("fatal error connecting to mongo database: %v", zap.Error(err))
+	}
+
+	// ping the specific db in the mongo instance to check the connection
+	var result bson.M
+	err = mongoClient.Database(config.MONGODB_MESSAGE_DB).RunCommand(context.TODO(), bson.D{{"ping", 1}}).Decode(&result)
+	if err != nil {
+		logger.Fatal("fatal error pinging database: %v", zap.Error(err))
+	}
+	logger.Info("database %v connected successfully", zap.String("config.MONGODB_MESSAGE_DB", config.MONGODB_MESSAGE_DB))
+
 	// create our database proxy server
-	dbps, err := NewDbProxySvr(logger, rabbitmqAmqpChannel, config.MONGODB_ENDPOINT, config.MESSAGE_DB)
+	dbps, err := NewDbProxySvr(logger, rabbitmqAmqpChannel, mongoClient, config.MONGODB_MESSAGE_DB, config.DBPROXY_SVR_ENDPOINT)
 	if err != nil {
 		logger.Fatal("fatal error creating database proxy server")
 	}

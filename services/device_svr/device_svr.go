@@ -225,10 +225,13 @@ func (s *DeviceSvr) pipeConnectedDevicesToBroker(exchangeName string) {
 		s.logger.Fatal("error piping messages from message broker %v", zap.Error(err))
 	}
 
+	// reuse the object
 	var res utils.ApiRes_WS
 
+	// this loop fires each time a device connects or disconnects
 	for range s.svrRegisterChangeChan {
 
+		// get all the connected devices
 		res.ConnectedDevicesList = s.connIndex.GetAllKeys()
 		bytes, err := json.Marshal(res)
 		if err != nil {

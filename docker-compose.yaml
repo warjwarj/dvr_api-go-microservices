@@ -1,44 +1,59 @@
 services:
-  # # mongo server to store the device messages in
+  # mongo server to store the device messages in
   mongodb:
-    image: mongo:latest  # Use the official MongoDB image from Docker Hub
     container_name: mongodb  # Name of the container
+    image: mongo:latest  # Use the official MongoDB image from Docker Hub
     ports:
-      - "27017:27017"  # Map the MongoDB port 27017 to the host
-  # # rabbitmq image
-  # rabbitmq:
-  #   image: rabbitmq:3
-  #   container_name: rabbitmq
-  #   ports:
-  #     - "5672:5672"
-  #     - "15672:15672"
+      - "27017:27017"  # Map the MongoDB port 27017 to the host so we can connect to it via mongo compass
+    expose:
+      - "27017"
+  # rabbitmq image
+  rabbitmq:
+    container_name: rabbitmq
+    image: rabbitmq:3
+    expose:
+     - "5672"
+     - "15672"
   # device server, intake device messages
-  # device_svr:  
-  #   build:
-  #     context: ./
-  #     dockerfile: ./services/device_svr/device_svr.Dockerfile
-  #   ports:
-  #     - "9047:9047"
-  # # websocket api server, live communication and device messages
-  # ws_api_svr:  
-  #   build:
-  #     context: ./
-  #     dockerfile: ./services/ws_api_svr/ws_api_svr.Dockerfile
-  #   ports:
-  #     - "9046:9046"
-  # # http api server, historic device data
-  # http_api_svr:  
-  #   build:
-  #     context: ./
-  #     dockerfile: ./services/http_api_svr/http_api_svr.Dockerfile
-  #   ports:
-  #     - "9045:9045"
-  # # database proxy, access point for databases
-  # dbproxy_svr:  
-  #   build:
-  #     context: ./
-  #     dockerfile: ./services/dbproxy_svr/dbproxy_svr.Dockerfile
-  #   ports:
-  #     - "27017:27017"
+  device_svr:
+    container_name: device_svr
+    build:
+      context: ./
+      dockerfile: ./services/device_svr/device_svr.Dockerfile
+    ports:
+      - "9047:9047"
+    expose:
+     - "5672"
+     - "15672"
+  # websocket api server, live communication and device messages
+  ws_api_svr:
+    container_name: ws_api_svr
+    build:
+      context: ./
+      dockerfile: ./services/ws_api_svr/ws_api_svr.Dockerfile
+    ports:
+      - "9046:9046"
+    expose:
+     - "5672"
+     - "15672"
+  # http api server, historic device data
+  http_api_svr:
+    container_name: http_api_svr
+    build:
+      context: ./
+      dockerfile: ./services/http_api_svr/http_api_svr.Dockerfile
+    ports:
+      - "9045:9045"
+  # database proxy, access point for databases
+  dbproxy_svr:
+    container_name: dbproxy_svr
+    build:
+      context: ./
+      dockerfile: ./services/dbproxy_svr/dbproxy_svr.Dockerfile
+    expose:
+     - "9044"
+     - "5672"
+     - "15672"
+     - "27017"
 
 # docker run -d -it --rm --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3

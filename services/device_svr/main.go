@@ -31,7 +31,7 @@ func main() {
 	defer logger.Sync() // flushes buffer, if any
 
 	// dial the rabbitmq server
-	rabbitmqAmqpConnection, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+	rabbitmqAmqpConnection, err := amqp.Dial(config.RABBITMQ_AMQP_ENDPOINT)
 	if err != nil {
 		logger.Fatal("fatal error dialing rabbitmq server: %v", zap.Error(err))
 		return
