@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"sync"
 
 	config "dvr_api-go-microservices/pkg/config"
 	utils "dvr_api-go-microservices/pkg/utils"
@@ -17,6 +18,7 @@ type PubSubHandler struct {
 	logger              *zap.Logger                  //logger
 	apiSvr              *WsApiSvr                    // api svr
 	rabbitmqAmqpChannel *amqp.Channel                // channel to msg broker
+	subscriptionsLock   sync.Mutex                   // lock for the subs map
 	subscriptions       map[string]map[string]string // device ids against connections. Use internal map just for indexing the keys
 }
 
@@ -54,6 +56,11 @@ func (sh *PubSubHandler) Run() error {
 
 // add the subscription requester's connection onto the list of subscribers for each device
 func (sh *PubSubHandler) Subscribe(subReq *utils.SubReqWrapper) error {
+
+	// avoid concurrent read/write/iteration errors
+	sh.subscriptionsLock.Lock()
+	defer sh.subscriptionsLock.Unlock()
+
 	// delete old subs
 	for _, val := range subReq.OldDevlist {
 		// if the map that holds subs isn't inited then just continue
@@ -76,6 +83,11 @@ func (sh *PubSubHandler) Subscribe(subReq *utils.SubReqWrapper) error {
 
 // publish a message. This function works
 func (sh *PubSubHandler) Publish(msgWrap *utils.MessageWrapper) error {
+
+	// avoid concurrent read/write/iteration errors
+	sh.subscriptionsLock.Lock()
+	defer sh.subscriptionsLock.Unlock()
+
 	// check if there are even eny susbcribers
 	if sh.subscriptions[*msgWrap.ClientId] == nil {
 		return nil

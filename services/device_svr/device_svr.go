@@ -127,7 +127,6 @@ func (s *DeviceSvr) deviceConnLoop(conn net.Conn) error {
 		// if error is just disconnection then return nil else return the error
 		if err != nil {
 			s.logger.Debug("connection closed on device svr...")
-			s.sockOpBufStack.Push(buf)
 			if err == io.EOF {
 				return nil
 			}
@@ -158,6 +157,7 @@ func (s *DeviceSvr) deviceConnLoop(conn net.Conn) error {
 			// remove from index and notify of disconnection
 			defer func() {
 				s.connIndex.Delete(*id)
+				s.sockOpBufStack.Push(buf)
 				s.svrRegisterChangeChan <- struct{}{}
 			}()
 		}

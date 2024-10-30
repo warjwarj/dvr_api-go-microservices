@@ -107,6 +107,8 @@ func (d *Dictionary[T]) Get(key string) (*T, bool) {
 
 // Function to get a value from the dictionary by key
 func (d *Dictionary[T]) GetAllKeys() []string {
+	d.lock.Lock()
+	defer d.lock.Unlock()
 	keys := make([]string, len(d.internal))
 	i := 0
 	for k := range d.internal {

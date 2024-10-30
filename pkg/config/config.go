@@ -19,9 +19,9 @@ const (
 	DBPROXY_SVR_ENDPOINT string = "dbproxy_svr:9044"  // endpoint for database proxy REST svr
 
 	// these are used in the device server
-	CAPACITY        int = 200  // how many devices can connect to the server
-	BUF_SIZE        int = 1024 // how much memory will you allocate to IO operations
-	SVR_MSGBUF_SIZE int = 40   // capacity of message queue
+	CAPACITY        int = 20000 // how many devices can connect to the server
+	BUF_SIZE        int = 1024  // how much memory will you allocate to IO operations
+	SVR_MSGBUF_SIZE int = 40    // capacity of message queue
 
 	// RABBITMQ - endpoint and variables
 	RABBITMQ_AMQP_ENDPOINT string = "amqp://guest:guest@rabbitmq:5672" // rabbitmq amqp uri
