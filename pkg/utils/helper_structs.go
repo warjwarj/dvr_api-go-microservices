@@ -58,3 +58,9 @@ type ApiRequest_HTTP struct {
 	Before  time.Time `bson:"Before"`
 	After   time.Time `bson:"After"`
 }
+
+// used to convey device connection/disconnection events
+type DeviceConnectionStateChange struct {
+	DeviceId     string `json:"DeviceId"`     // device state change is effect of
+	IsConnection bool   `json:"IsConnection"` // if true device is connecting, false device is disconnecting
+}

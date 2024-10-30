@@ -48,6 +48,9 @@ func (dps *DbProxySvr) Run() {
 	go dps.pipeMessagesFromQueueIntoDatabase("from_device", config.MSGS_FROM_DEVICE_SVR)
 	go dps.pipeMessagesFromQueueIntoDatabase("from_api_client", config.MSGS_FROM_API_SVR)
 
+	// start receiving device connection and disconnection events
+	go dps.pipeConnectedDevicesFromBroker(config.DEVICE_CONNECTION_STATE_CHANGES)
+
 	// listen tcp
 	l, err := net.Listen("tcp", dps.restEndpoint)
 	if err != nil {
@@ -262,3 +265,134 @@ func (dps *DbProxySvr) pipeMessagesFromQueueIntoDatabase(directionDescriptor str
 		}
 	}
 }
+
+// Take messages from the broker and send them to clients. Messages from devices
+func (dps *DbProxySvr) pipeConnectedDevicesFromBroker(exchangeName string) {
+
+	// declare exchange we are taking messages from.
+	err := dps.rabbitmqAmqpChannel.ExchangeDeclare(
+		exchangeName, // name
+		"fanout",     // type
+		true,         // durable
+		false,        // auto-deleted
+		false,        // internal
+		false,        // no-wait
+		nil,          // arguments
+	)
+	if err != nil {
+		dps.logger.Fatal("error piping messages from message broker %v", zap.Error(err))
+	}
+
+	// declare a queue onto the exchange above
+	q, err := dps.rabbitmqAmqpChannel.QueueDeclare(
+		"",    // name -
+		false, // durable
+		false, // delete when unused
+		true,  // exclusive
+		false, // no-wait
+		nil,   // arguments
+	)
+	if err != nil {
+		dps.logger.Fatal("error declaring queue %v", zap.Error(err))
+	}
+
+	// bind the queue onto the exchange
+	err = dps.rabbitmqAmqpChannel.QueueBind(
+		q.Name,       // queue name
+		"",           // routing key
+		exchangeName, // exchange
+		false,
+		nil,
+	)
+	if err != nil {
+		dps.logger.Error("error binding queue %v", zap.Error(err))
+	}
+
+	// get a golang channel we can read messages from.
+	msgs, err := dps.rabbitmqAmqpChannel.Consume(
+		q.Name, // name - WE DEPEND ON THE QUEUE BEING NAMED THE SAME AS THE EXCHANGE - ONLY ONE Q CONSUMING FROM THIS EXCHANGE
+		"",     // consumer
+		true,   // auto-ack
+		false,  // exclusive
+		false,  // no-local
+		false,  // no-wait
+		nil,    // args
+	)
+	if err != nil {
+		dps.logger.Error("error consuming from queue %v", zap.Error(err))
+	}
+
+	// reuse - struct which informs of a device connection/disconneciton
+	var devConnStateChange utils.DeviceConnectionStateChange
+
+	// declare collection, insert/initialise empty document for dev list
+	coll := dps.client.Database(dps.dbName).Collection(config.MONGODB_GLOBAL_CONNECTED_DEVICES_LIST)
+	_, err = coll.UpdateOne(
+		context.TODO(),
+		bson.D{},
+		bson.D{{Key: "$push", Value: bson.D{{Key: "ConnectedDevices", Value: []string{}}}}},
+		options.Update().SetUpsert(true))
+	if err != nil {
+		dps.logger.Error("error inserting initial document to mongo %v", zap.Error(err))
+	}
+
+	// connection loop
+	for d := range msgs {
+		// this is the message revceived from broker
+		err := json.Unmarshal(d.Body, devConnStateChange)
+		if err != nil {
+			dps.logger.Error("received erroneous value from message broker, couldn't unmarshal")
+			fmt.Println(devConnStateChange)
+		}
+
+		// either add or remove the device id from the connected devices list
+		if devConnStateChange.IsConnection {
+			// if the device is connecting
+			_, err = coll.UpdateOne(
+				context.TODO(),
+				bson.D{}, // Match all documents (since we only have one)
+				bson.D{{Key: "$push", Value: bson.D{{Key: "ConnectedDevices", Value: devConnStateChange.DeviceId}}}},
+			)
+			if err != nil {
+				dps.logger.Error("error inserting device to connected device list document in mongo %v", zap.Error(err))
+			}
+		} else {
+			// else the device is disconnecting
+			_, err = coll.UpdateOne(
+				context.TODO(),
+				bson.D{}, // Match all documents (since we only have one)
+				bson.D{{Key: "$pull", Value: bson.D{{Key: "ConnectedDevices", Value: devConnStateChange.DeviceId}}}},
+			)
+			if err != nil {
+				dps.logger.Error("error removing device from connected device list document in mongo %v", zap.Error(err))
+			}
+		}
+
+	}
+}
+
+// func insertString(newString string) {
+//     collection := client.Database(dbName).Collection(collectionName)
+//     _, err := collection.UpdateOne(
+//         context.TODO(),
+//         bson.D{}, // Match all documents (since we only have one)
+//         bson.D{{Key: "$push", Value: bson.D{{Key: "strings", Value: newString}}}},
+//     )
+//     if err != nil {
+//         log.Fatal(err)
+//     }
+//     fmt.Printf("Inserted: %s\n", newString)
+// }
+
+// func deleteString(stringToDelete string) {
+//     collection := client.Database(dbName).Collection(collectionName)
+//     _, err := collection.UpdateOne(
+//         context.TODO(),
+//         bson.D{}, // Match all documents
+//         bson.D{{Key: "$pull", Value: bson.D{{Key: "strings", Value: stringToDelete}}}},
+//     )
+//     if err != nil {
+//         log.Fatal(err)
+//     }
+//     fmt.Printf("Deleted: %s\n", stringToDelete)
+// }

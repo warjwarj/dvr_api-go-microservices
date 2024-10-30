@@ -15,15 +15,15 @@ import (
 
 type DeviceSvr struct {
 	logger                *zap.Logger
-	endpoint              string                     // IP + port, ex: "192.168.1.77:9047"
-	capacity              int                        // num of connections
-	sockOpBufSize         int                        // how much memory do we give each connection to perform send/recv operations
-	sockOpBufStack        utils.Stack[*[]byte]       // memory region we give each conn to so send/recv
-	svrMsgBufSize         int                        // how many messages can we queue on the server at once
-	svrMsgBufChan         chan []byte                // the channel we use to queue the messages
-	svrRegisterChangeChan chan struct{}              // fire a struct down this channel each time a device connects or disconnects
-	connIndex             utils.Dictionary[net.Conn] // index of the connection objects against the ids of the devices represented thusly
-	rabbitmqAmqpChannel   *amqp.Channel              // tcp connection with rabbitmq server
+	endpoint              string                                 // IP + port, ex: "192.168.1.77:9047"
+	capacity              int                                    // num of connections
+	sockOpBufSize         int                                    // how much memory do we give each connection to perform send/recv operations
+	sockOpBufStack        utils.Stack[*[]byte]                   // memory region we give each conn to so send/recv
+	svrMsgBufSize         int                                    // how many messages can we queue on the server at once
+	svrMsgBufChan         chan []byte                            // the channel we use to queue the messages
+	svrRegisterChangeChan chan utils.DeviceConnectionStateChange // fire a struct down this channel each time a device connects or disconnects
+	connIndex             utils.Dictionary[net.Conn]             // index of the connection objects against the ids of the devices represented thusly
+	rabbitmqAmqpChannel   *amqp.Channel                          // tcp connection with rabbitmq server
 }
 
 func NewDeviceSvr(
@@ -43,7 +43,7 @@ func NewDeviceSvr(
 		utils.Stack[*[]byte]{},
 		svrMsgBufSize,
 		make(chan []byte),
-		make(chan struct{}),
+		make(chan utils.DeviceConnectionStateChange),
 		utils.Dictionary[net.Conn]{},
 		rabbitmqAmqpChannel}
 
@@ -84,7 +84,9 @@ func (s *DeviceSvr) Run() {
 	// start the output and input from the message broker
 	go s.pipeMessagesToBroker(config.MSGS_FROM_DEVICE_SVR)
 	go s.pipeMessagesFromBroker(config.MSGS_FROM_API_SVR)
-	go s.pipeConnectedDevicesToBroker(config.CONNECTED_DEVICES_LIST)
+
+	// start piping device conneciton state changes to server
+	go s.pipeConnectedDevicesToBroker(config.DEVICE_CONNECTION_STATE_CHANGES)
 
 	// start accepting device connections
 	for {
@@ -144,6 +146,8 @@ func (s *DeviceSvr) deviceConnLoop(conn net.Conn) error {
 
 		// set id if not already set
 		if id == nil {
+
+			// parse the id from the message
 			id, err = utils.GetIdFromMessage(&msg)
 			if err != nil {
 				s.logger.Debug("error getting id from msg %v", zap.String("msg", msg))
@@ -152,13 +156,13 @@ func (s *DeviceSvr) deviceConnLoop(conn net.Conn) error {
 
 			// add to conn index and notify of connection
 			s.connIndex.Add(*id, conn)
-			s.svrRegisterChangeChan <- struct{}{}
+			s.svrRegisterChangeChan <- utils.DeviceConnectionStateChange{*id, true}
 
 			// remove from index and notify of disconnection
 			defer func() {
 				s.connIndex.Delete(*id)
 				s.sockOpBufStack.Push(buf)
-				s.svrRegisterChangeChan <- struct{}{}
+				s.svrRegisterChangeChan <- utils.DeviceConnectionStateChange{*id, false}
 			}()
 		}
 
@@ -225,15 +229,11 @@ func (s *DeviceSvr) pipeConnectedDevicesToBroker(exchangeName string) {
 		s.logger.Fatal("error piping messages from message broker %v", zap.Error(err))
 	}
 
-	// reuse the object
-	var res utils.ApiRes_WS
-
 	// this loop fires each time a device connects or disconnects
-	for range s.svrRegisterChangeChan {
+	for i := range s.svrRegisterChangeChan {
 
-		// get all the connected devices
-		res.ConnectedDevicesList = s.connIndex.GetAllKeys()
-		bytes, err := json.Marshal(res)
+		// get bytes
+		bytes, err := json.Marshal(i)
 		if err != nil {
 			s.logger.Error("error mashalling into json %v", zap.Error(err))
 		}
@@ -249,7 +249,7 @@ func (s *DeviceSvr) pipeConnectedDevicesToBroker(exchangeName string) {
 				Body:        []byte(bytes),
 			})
 		if err != nil {
-			s.logger.Error("error piping connected device list into message broker %v", zap.Error(err))
+			s.logger.Error("error piping device connection event into message broker %v", zap.Error(err))
 		}
 	}
 }

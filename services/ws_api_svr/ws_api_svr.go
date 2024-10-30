@@ -64,7 +64,6 @@ func (s *WsApiSvr) Run() {
 
 	// start the output to message broker
 	go s.pipeMessagesToBroker(config.MSGS_FROM_API_SVR)
-	go s.pipeConnectedDevicesFromBroker(config.CONNECTED_DEVICES_LIST)
 
 	// accept http on the port open for tcp above
 	httpSvr := &http.Server{
@@ -198,72 +197,6 @@ func (s *WsApiSvr) pipeMessagesToBroker(exchangeName string) {
 			})
 		if err != nil {
 			s.logger.Error("error piping messages into message broker %v", zap.Error(err))
-		}
-	}
-}
-
-// Take messages from the broker and send them to clients. Messages from devices
-func (s *WsApiSvr) pipeConnectedDevicesFromBroker(exchangeName string) {
-
-	// declare exchange we are taking messages from.
-	err := s.rabbitmqAmqpChannel.ExchangeDeclare(
-		exchangeName, // name
-		"fanout",     // type
-		true,         // durable
-		false,        // auto-deleted
-		false,        // internal
-		false,        // no-wait
-		nil,          // arguments
-	)
-	if err != nil {
-		s.logger.Fatal("error piping messages from message broker %v", zap.Error(err))
-	}
-
-	// declare a queue onto the exchange above
-	q, err := s.rabbitmqAmqpChannel.QueueDeclare(
-		"",    // name -
-		false, // durable
-		false, // delete when unused
-		true,  // exclusive
-		false, // no-wait
-		nil,   // arguments
-	)
-	if err != nil {
-		s.logger.Fatal("error declaring queue %v", zap.Error(err))
-	}
-
-	// bind the queue onto the exchange
-	err = s.rabbitmqAmqpChannel.QueueBind(
-		q.Name,       // queue name
-		"",           // routing key
-		exchangeName, // exchange
-		false,
-		nil,
-	)
-	if err != nil {
-		s.logger.Error("error binding queue %v", zap.Error(err))
-	}
-
-	// get a golang channel we can read messages from.
-	msgs, err := s.rabbitmqAmqpChannel.Consume(
-		q.Name, // name - WE DEPEND ON THE QUEUE BEING NAMED THE SAME AS THE EXCHANGE - ONLY ONE Q CONSUMING FROM THIS EXCHANGE
-		"",     // consumer
-		true,   // auto-ack
-		false,  // exclusive
-		false,  // no-local
-		false,  // no-wait
-		nil,    // args
-	)
-	if err != nil {
-		s.logger.Error("error consuming from queue %v", zap.Error(err))
-	}
-
-	// connection loop
-	for d := range msgs {
-		// this is the message revceived from broker
-		err := json.Unmarshal(d.Body, &s.connectedDevicesList)
-		if err != nil {
-			s.logger.Error("received erroneous value from message broker, couldn't unmarshal into message wrapper")
 		}
 	}
 }
