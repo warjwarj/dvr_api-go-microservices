@@ -13,10 +13,9 @@ const (
 	PROD bool = false
 
 	// Endpoints visible to the outside.
-	DEVICE_SVR_ENDPOINT  string = "device_svr:9047"   // endpoint for dev svr
-	API_SVR_ENDPOINT     string = "ws_api_svr:9046"   // endpoint for api websock svr
-	HTTP_SVR_ENDPOINT    string = "http_api_svr:9045" // endpoint for api REST svr
-	DBPROXY_SVR_ENDPOINT string = "dbproxy_svr:9044"  // endpoint for database proxy REST svr
+	DEVICE_SVR_ENDPOINT  string = "device_svr:9047"  // endpoint for dev svr
+	API_SVR_ENDPOINT     string = "ws_api_svr:9046"  // endpoint for api websock svr
+	DBPROXY_SVR_ENDPOINT string = "dbproxy_svr:9045" // endpoint for database proxy REST svr
 
 	// these are used in the device server
 	CAPACITY        int = 200  // how many devices can connect to the server

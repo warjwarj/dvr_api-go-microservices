@@ -54,9 +54,10 @@ type DeviceMessage_Response struct {
 
 // struct we marshal a http request body, formatted in json, into.
 type ApiRequest_HTTP struct {
-	Devices []string  `bson:"Devices"`
-	Before  time.Time `bson:"Before"`
-	After   time.Time `bson:"After"`
+	Devices             []string  `bson:"Devices"`
+	Before              time.Time `bson:"Before"`
+	After               time.Time `bson:"After"`
+	GetConnectedDevices bool      `bson:"GetConnectedDevices"`
 }
 
 // used to convey device connection/disconnection events

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net"
+	"strings"
 	"time"
 
 	config "dvr_api-go-microservices/pkg/config"
@@ -156,13 +157,13 @@ func (s *DeviceSvr) deviceConnLoop(conn net.Conn) error {
 
 			// add to conn index and notify of connection
 			s.connIndex.Add(*id, conn)
-			s.svrRegisterChangeChan <- utils.DeviceConnectionStateChange{*id, true}
+			s.svrRegisterChangeChan <- utils.DeviceConnectionStateChange{strings.Clone(*id), true}
 
 			// remove from index and notify of disconnection
 			defer func() {
 				s.connIndex.Delete(*id)
 				s.sockOpBufStack.Push(buf)
-				s.svrRegisterChangeChan <- utils.DeviceConnectionStateChange{*id, false}
+				s.svrRegisterChangeChan <- utils.DeviceConnectionStateChange{strings.Clone(*id), false}
 			}()
 		}
 
@@ -235,7 +236,7 @@ func (s *DeviceSvr) pipeConnectedDevicesToBroker(exchangeName string) {
 		// get bytes
 		bytes, err := json.Marshal(i)
 		if err != nil {
-			s.logger.Error("error mashalling into json %v", zap.Error(err))
+			s.logger.Error("error marshalling into json %v", zap.Error(err))
 		}
 
 		// publish our JSON message to the exchange which handles messages from devices

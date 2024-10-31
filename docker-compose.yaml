@@ -36,20 +36,14 @@ services:
     expose:
      - "5672"
      - "15672"
-  # http api server, historic device data
-  http_api_svr:
-    container_name: http_api_svr
-    build:
-      context: ./
-      dockerfile: ./services/http_api_svr/http_api_svr.Dockerfile
-    ports:
-      - "9045:9045"
-  # database proxy, access point for databases
+  # database proxy, http API server
   dbproxy_svr:
     container_name: dbproxy_svr
     build:
       context: ./
       dockerfile: ./services/dbproxy_svr/dbproxy_svr.Dockerfile
+    ports:
+      - "9045:9045"
     expose:
      - "9044"
      - "5672"

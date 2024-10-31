@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"time"
@@ -71,11 +72,11 @@ func (dps *DbProxySvr) Run() {
 
 // serve the http API
 func (dps *DbProxySvr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// check edge cases
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
+	// // check edge cases
+	// if r.Method != http.MethodPost {
+	// 	w.WriteHeader(http.StatusBadRequest)
+	// 	return
+	// }
 
 	// check cors if in prod
 	if !config.PROD {
@@ -91,36 +92,85 @@ func (dps *DbProxySvr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// unmarshal bytes into a struct we can work with
-	var req utils.ApiRequest_HTTP
-	err = json.Unmarshal(body, &req)
-	if err != nil {
-		dps.logger.Warn("failed to unmarshal json: \n%v", zap.String("body", string(body)))
-	}
+	// parse the request type reqType
+	query := r.URL.Query()
+	reqType := query.Get("reqType")
 
-	// query the database
-	res, err := dps.QueryMsgHistory(req.Devices, req.Before, req.After)
-	if err != nil {
-		dps.logger.Error("failed to query msg history: %v", zap.Error(err))
-	}
+	if reqType == "MessageHistory" {
+		// unmarshal bytes into a struct we can work with
+		var req utils.ApiRequest_HTTP
+		err = json.Unmarshal(body, &req)
+		if err != nil {
+			dps.logger.Warn("failed to unmarshal json: \n%v", zap.String("body", string(body)))
+		}
 
-	// marshal back into json
-	bytes, err := json.Marshal(res)
-	if err != nil {
-		dps.logger.Error("failed to marshal golang struct into json bytes: %v", zap.Error(err))
-		return
-	}
+		// query the database
+		res, err := dps.QueryMsgHistory(req.Devices, req.Before, req.After)
+		if err != nil {
+			dps.logger.Error("failed to query msg history: %v", zap.Error(err))
+		}
 
-	// set the response header Content-Type to application/json
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(bytes)
+		// marshal back into json
+		bytes, err := json.Marshal(res)
+		if err != nil {
+			dps.logger.Error("failed to marshal golang struct into json bytes: %v", zap.Error(err))
+			return
+		}
+
+		// set the response header Content-Type to application/json
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(bytes)
+
+	} else if reqType == "GetConnectedDevices" {
+		// query the database
+		res, err := dps.QueryConnectedDevices()
+		if err != nil {
+			dps.logger.Error("failed to query msg history: %v", zap.Error(err))
+		}
+
+		// marshal back into json
+		bytes, err := json.Marshal(res)
+		if err != nil {
+			dps.logger.Error("failed to marshal golang struct into json bytes: %v", zap.Error(err))
+			return
+		}
+
+		// set the response header Content-Type to application/json
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(bytes)
+	}
 }
 
-func (s *DbProxySvr) QueryMsgHistory(devices []string, before time.Time, after time.Time) ([]bson.M, error) {
+func (dps *DbProxySvr) QueryConnectedDevices() ([]bson.M, error) {
+	// might be worth storing this to avoid redeclaration upon each function call
+	coll := dps.client.Database(dps.dbName).Collection(config.MONGODB_GLOBAL_CONNECTED_DEVICES_LIST)
+
+	// Find all documents (empty filter)
+	cursor, err := coll.Find(context.TODO(), bson.D{}, options.Find().SetProjection(bson.M{"_id": 0}))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer cursor.Close(context.TODO())
+
+	// iterate over the cursor returned and return docuements that match the query
+	var documents []bson.M
+	for cursor.Next(context.TODO()) {
+		var result bson.M
+		err := cursor.Decode(&result)
+		if err != nil {
+			panic(err)
+		}
+		documents = append(documents, result)
+	}
+	return documents, nil
+}
+
+func (dps *DbProxySvr) QueryMsgHistory(devices []string, before time.Time, after time.Time) ([]bson.M, error) {
 
 	// might be worth storing this to avoid redeclaration upon each function call
-	coll := s.client.Database(s.dbName).Collection("default_message_collection")
+	coll := dps.client.Database(dps.dbName).Collection(config.MONGODB_MESSAGE_DEFAULT_COLLECTION)
 
 	// query filter. Device id in devices, and packet_time between the two dates passed
 	filter := bson.D{
@@ -256,8 +306,6 @@ func (dps *DbProxySvr) pipeMessagesFromQueueIntoDatabase(directionDescriptor str
 			},
 		}
 
-		fmt.Println(msgSchema)
-
 		// perform update/insertion
 		_, err = coll.UpdateOne(context.TODO(), filter, update, options.Update().SetUpsert(true))
 		if err != nil {
@@ -322,24 +370,25 @@ func (dps *DbProxySvr) pipeConnectedDevicesFromBroker(exchangeName string) {
 		dps.logger.Error("error consuming from queue %v", zap.Error(err))
 	}
 
-	// reuse - struct which informs of a device connection/disconneciton
-	var devConnStateChange utils.DeviceConnectionStateChange
-
 	// declare collection, insert/initialise empty document for dev list
 	coll := dps.client.Database(dps.dbName).Collection(config.MONGODB_GLOBAL_CONNECTED_DEVICES_LIST)
 	_, err = coll.UpdateOne(
 		context.TODO(),
 		bson.D{},
-		bson.D{{Key: "$push", Value: bson.D{{Key: "ConnectedDevices", Value: []string{}}}}},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "ConnectedDevices", Value: []string{}}}}}, // set ConnectedDevices to an empty array
 		options.Update().SetUpsert(true))
 	if err != nil {
 		dps.logger.Error("error inserting initial document to mongo %v", zap.Error(err))
 	}
 
+	// reuse - struct which informs of a device connection/disconneciton
+	var devConnStateChange utils.DeviceConnectionStateChange
+
 	// connection loop
 	for d := range msgs {
+
 		// this is the message revceived from broker
-		err := json.Unmarshal(d.Body, devConnStateChange)
+		err := json.Unmarshal(d.Body, &devConnStateChange)
 		if err != nil {
 			dps.logger.Error("received erroneous value from message broker, couldn't unmarshal")
 			fmt.Println(devConnStateChange)
