@@ -18,14 +18,13 @@ import (
 )
 
 type WsApiSvr struct {
-	logger               *zap.Logger                      // logger
-	endpoint             string                           // IP + port, ex: "192.168.1.77:9047"
-	svrMsgBufChan        chan utils.MessageWrapper        // channel we use to queue messages
-	svrSubReqBufChan     chan utils.SubReqWrapper         // channel we use to queue subscription requests
-	connIndex            utils.Dictionary[websocket.Conn] // index the connection objects against the ids of the clients represented thusly
-	rabbitmqAmqpChannel  *amqp.Channel                    // channel connected to the broker
-	connectedDevicesList utils.ApiRes_WS                  // currently just holds the connected device list
-	capacity             int                              // amount of devices that can be connected
+	logger              *zap.Logger                      // logger
+	endpoint            string                           // IP + port, ex: "192.168.1.77:9047"
+	svrMsgBufChan       chan utils.MessageWrapper        // channel we use to queue messages
+	svrSubReqBufChan    chan utils.SubReqWrapper         // channel we use to queue subscription requests
+	connIndex           utils.Dictionary[websocket.Conn] // index the connection objects against the ids of the clients represented thusly
+	rabbitmqAmqpChannel *amqp.Channel                    // channel connected to the broker
+	capacity            int                              // amount of devices that can be connected
 }
 
 func NewWsApiSvr(
@@ -42,7 +41,6 @@ func NewWsApiSvr(
 		make(chan utils.SubReqWrapper),
 		utils.Dictionary[websocket.Conn]{},
 		rabbitmqAmqpChannel,
-		utils.ApiRes_WS{ConnectedDevicesList: []string{}},
 		capacity}
 
 	// init the connIndex
@@ -139,11 +137,6 @@ func (s *WsApiSvr) connHandler(conn *websocket.Conn) error {
 			// don't realistically need to know why but might be useful for debug.
 			s.logger.Debug("websocket connection closed, status: %v, websocket.CloseStatus: %v", zap.Error(err), zap.String("websocket.CloseStatus(err)", websocket.CloseStatus(err).String()))
 			return nil
-		}
-
-		// if they have send a request for the connected devices list then oblige
-		if req.GetConnectedDevices {
-			wsjson.Write(context.TODO(), conn, &s.connectedDevicesList)
 		}
 
 		// register the subscription request

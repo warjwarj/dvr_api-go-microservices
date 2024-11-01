@@ -6,14 +6,8 @@ import (
 
 // used in ws_svr.go to read json messages into structs
 type ApiReq_WS struct {
-	Messages            []string `json:"Messages"`
-	Subscriptions       []string `json:"Subscriptions"`
-	GetConnectedDevices bool     `json:"GetConnectedDevices"`
-}
-
-// used in ws_svr.go to send a websocket message containing all
-type ApiRes_WS struct {
-	ConnectedDevicesList []string `json:"ConnectedDevicesList"`
+	Messages      []string `json:"Messages"`
+	Subscriptions []string `json:"Subscriptions"`
 }
 
 // used in ws_svr.go - use to convey subscription requests to the handler from the server
@@ -54,10 +48,9 @@ type DeviceMessage_Response struct {
 
 // struct we marshal a http request body, formatted in json, into.
 type ApiRequest_HTTP struct {
-	Devices             []string  `bson:"Devices"`
-	Before              time.Time `bson:"Before"`
-	After               time.Time `bson:"After"`
-	GetConnectedDevices bool      `bson:"GetConnectedDevices"`
+	Devices []string  `bson:"Devices"`
+	Before  time.Time `bson:"Before"`
+	After   time.Time `bson:"After"`
 }
 
 // used to convey device connection/disconnection events

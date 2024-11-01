@@ -143,7 +143,7 @@ func (dps *DbProxySvr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (dps *DbProxySvr) QueryConnectedDevices() ([]bson.M, error) {
+func (dps *DbProxySvr) QueryConnectedDevices() (bson.M, error) {
 	// might be worth storing this to avoid redeclaration upon each function call
 	coll := dps.client.Database(dps.dbName).Collection(config.MONGODB_GLOBAL_CONNECTED_DEVICES_LIST)
 
@@ -164,7 +164,7 @@ func (dps *DbProxySvr) QueryConnectedDevices() ([]bson.M, error) {
 		}
 		documents = append(documents, result)
 	}
-	return documents, nil
+	return documents[0], nil
 }
 
 func (dps *DbProxySvr) QueryMsgHistory(devices []string, before time.Time, after time.Time) ([]bson.M, error) {
