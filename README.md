@@ -4,12 +4,14 @@
 
 Send and receive messages to and from devices, view history of messages sent to and from devices.
 
-<h3>HTTP API - Message History</h3>
+<h3>HTTP API</h3>
+
+<h2>POST Messsage History: ?reqType=MessageHistory</h2>
 
 Send JSON in an HTTP GET request to get message history according to the parameters.<br>
 Will return  message history for devices in the list, where the <strong>packet time</strong> of the element is between the two stated times.<br>
 
-<h4>REQUEST - Example HTTP POST request to get message history</h4>
+<h4>REQUEST - Example HTTP POST request body to get message history</h4>
 {
     "after": "2023-10-03T16:45:14.000+00:00",
     "before": "2025-10-03T16:45:14.000+00:00",
@@ -41,6 +43,16 @@ Will return  message history for devices in the list, where the <strong>packet t
         ]
     }
 ]
+<br>
+
+<h2>RESPONSE connected devices: ?reqType=ConnectedDevices</h2>
+
+Send a get request to get a list of devices connected to the server.<br>
+Will return a JSON object with the key "ConnectedDevices" addressing the object field containing them, an array of strings.<br>
+
+<h4>RESPONSE - list of connected devices</h4>
+{"ConnectedDevices":["111"]}
+
 <br><br><br>
 
 <h3>WS API - Live Messaging</h3>

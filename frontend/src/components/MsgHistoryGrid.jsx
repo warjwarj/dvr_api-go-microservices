@@ -9,10 +9,10 @@ import { formatReqForMsgHistory } from '../Utils';
 
 // columns for table. Could use it in useState
 const MsgHistoryColumnDefs = [
-  { field: "receivedTime", colId: "receivedTime" },
-  { field: "direction", colId: "direction" },
-  { field: "message", colId: "message" },
-  { field: "packetTime", colId: "packetTime" }
+  { field: "ReceivedTime", colId: "ReceivedTime" },
+  { field: "Direction", colId: "Direction" },
+  { field: "Message", colId: "Message" },
+  { field: "PacketTime", colId: "PacketTime" }
 ]
 
 // props should expand to (device to display history of), (start time), and (end time)
@@ -38,10 +38,10 @@ export function MsgHistoryGrid({ device, after, before }) {
         return data
       }
       const formattedData = data[0].MsgHistory.map(msg => ({ 
-        receivedTime: new Date(msg.receivedTime).toLocaleString(), 
-        packetTime: new Date(msg.packetTime).toLocaleString(),
-        direction: msg.direction,
-        message: msg.message
+        ReceivedTime: new Date(msg.ReceivedTime).toLocaleString(), 
+        PacketTime: new Date(msg.PacketTime).toLocaleString(),
+        Direction: msg.Direction,
+        Message: msg.Message
       }))
       return formattedData.reverse() // so latest records are at the top
     }
@@ -51,6 +51,7 @@ export function MsgHistoryGrid({ device, after, before }) {
       try {
         const data = await fetchMsgHistory(formatReqForMsgHistory(device, after, before));
         setRowData(formatMsgHistoryData(data));
+        console.log(data)
       } catch (error) {
         console.error('Error fetching data:', error);
       }

@@ -122,7 +122,7 @@ func (dps *DbProxySvr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write(bytes)
 
-	} else if reqType == "GetConnectedDevices" {
+	} else if reqType == "ConnectedDevices" {
 		// query the database
 		res, err := dps.QueryConnectedDevices()
 		if err != nil {

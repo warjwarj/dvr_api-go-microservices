@@ -1,6 +1,6 @@
 
 
-const WS_API_SVR_ENDPOINT = "ws://127.0.0.1:9046"
+const API_SVR_ENDPOINT = "ws://127.0.0.1:9046"
 
 // singleton pattern for the persistent websocket 
 class ApiSvrConnection {
@@ -19,7 +19,7 @@ class ApiSvrConnection {
     // connects the websocket, returning a promise for the succesful connection.
     connect = () => {
         return new Promise((resolve, reject) => {
-            this.apiConnection = new WebSocket(WS_API_SVR_ENDPOINT, ["dvr_api"])
+            this.apiConnection = new WebSocket(API_SVR_ENDPOINT, ["dvr_api"])
             this.apiConnection.onopen = (event) => {
                 console.log("WS connected to API server");
                 resolve(this)
