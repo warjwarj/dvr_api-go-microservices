@@ -19,7 +19,7 @@ type PubSubHandler struct {
 	apiSvr              *WsApiSvr                    // api svr
 	rabbitmqAmqpChannel *amqp.Channel                // channel to msg broker
 	subscriptionsLock   sync.Mutex                   // lock for the subs map
-	subscriptions       map[string]map[string]string // device ids against connections. Use internal map just for indexing the keys
+	subscriptions       map[string]map[string]string // device ids against client ids, whose value is the same client it - map it used so we don't have to loop over the inner map.
 }
 
 // constructor
@@ -72,7 +72,7 @@ func (sh *PubSubHandler) Subscribe(subReq *utils.SubReqWrapper) error {
 	// add new subs
 	for _, val := range subReq.NewDevlist {
 		// if the requested device isn't currently registered as a 'publisher'
-		// then register them and add this client as a subscriber in case they register, connect, in the future
+		// then register them and add this client as a subscriber in case they register (connect) in the future
 		if sh.subscriptions[val] == nil {
 			sh.subscriptions[val] = make(map[string]string, 0)
 		}

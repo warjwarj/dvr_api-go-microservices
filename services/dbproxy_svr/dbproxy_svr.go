@@ -122,12 +122,13 @@ func (dps *DbProxySvr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write(bytes)
 
-	} else if reqType == "ConnectedDevices" {
+	} else if reqType == "GetConnectedDevices" {
 		// query the database
 		res, err := dps.QueryConnectedDevices()
 		if err != nil {
 			dps.logger.Error("failed to query msg history: %v", zap.Error(err))
 		}
+		fmt.Println(res)
 
 		// marshal back into json
 		bytes, err := json.Marshal(res)

@@ -45,7 +45,7 @@ Will return  message history for devices in the list, where the <strong>packet t
 ]
 <br>
 
-<h2>RESPONSE connected devices: ?reqType=ConnectedDevices</h2>
+<h2>RESPONSE connected devices: ?reqType=GetConnectedDevices</h2>
 
 Send a get request to get a list of devices connected to the server.<br>
 Will return a JSON object with the key "ConnectedDevices" addressing the object field containing them, an array of strings.<br>
