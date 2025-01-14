@@ -131,7 +131,6 @@ MDVR PROTOCOL HELPERS
 ~~~~~~~~~~~~~~~
 */
 
-// assuming the datetime is always at the fourth index
 // Assumption: that the date is formatted like: 20060102-150405
 func GetDateFromMessage(message string) (time.Time, error) {
 	msgArr := strings.Split(message, ";")
@@ -142,15 +141,19 @@ func GetDateFromMessage(message string) (time.Time, error) {
 			if len(elem) != 15 {
 				return time.Time{}, fmt.Errorf("input string length should be 15 characters")
 			}
-			// Parse the input string as a time.Time object
-			parsedTime, err := time.Parse("20060102-150405", elem)
-			if err != nil {
-				return time.Time{}, err
-			}
-			return parsedTime, nil
+			return ParseDVRFormatDateTime(elem)
 		}
 	}
 	return time.Time{}, fmt.Errorf("couldn't find datetime string in: %v", message)
+}
+
+func ParseDVRFormatDateTime(str string) (time.Time, error) {
+	// Parse the input string as a time.Time object
+	parsedTime, err := time.Parse("20060102-150405", str)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return parsedTime, nil
 }
 
 // get id from msg format: IDENTIFIER;1234;<-That's the id;xXxXxXxXxX;<CR>

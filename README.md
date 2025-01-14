@@ -13,39 +13,39 @@ Will return  message history for devices in the list, where the <strong>packet t
 
 <h4>REQUEST - Example HTTP POST request body to get message history</h4>
 {
-    "after": "2023-10-03T16:45:14.000+00:00",
-    "before": "2025-10-03T16:45:14.000+00:00",
-    "devices": [
-        "123456",
-        "222",
-        "444"
-    ]
+  "after": "2023-10-03T16:45:14.000+00:00",
+  "before": "2025-10-03T16:45:14.000+00:00",
+  "devices": [
+    "123456",
+    "222",
+    "444"
+  ]
 }
 <br>
 
 <h4>RESPONSE - Example of a response to a message history request</h4>
 [
-    {
-        "DeviceId": "123456",
-        "MsgHistory": [
-            {
-                "direction": "to",
-                "message": "$VIDEO;123456;20240817-123504;pokpok\r",
-                "packeTime": "2024-08-17T12:35:04Z",
-                "receivedTime": "2024-08-24T20:43:21.29Z"
-            },
-            {
-                "direction": "to",
-                "message": "$VIDEO;123456;20240817-123504;pokpok\r",
-                "packetTime": "2024-08-17T12:35:04Z",
-                "receivedTime": "2024-08-24T20:43:26.927Z"
-            },
-        ]
-    }
+  {
+    "DeviceId": "123456",
+    "MsgHistory": [
+      {
+        "direction": "to",
+        "message": "$VIDEO;123456;20240817-123504;pokpok\r",
+        "packeTime": "2024-08-17T12:35:04Z",
+        "receivedTime": "2024-08-24T20:43:21.29Z"
+      },
+      {
+        "direction": "to",
+        "message": "$VIDEO;123456;20240817-123504;pokpok\r",
+        "packetTime": "2024-08-17T12:35:04Z",
+        "receivedTime": "2024-08-24T20:43:26.927Z"
+      },
+    ]
+  }
 ]
 <br>
 
-<h2>RESPONSE connected devices: ?reqType=GetConnectedDevices</h2>
+<h4>REQUEST connected devices: ?reqType=GetConnectedDevices</h4>
 
 Send a get request to get a list of devices connected to the server.<br>
 Will return a JSON object with the key "ConnectedDevices" addressing the object field containing them, an array of strings.<br>
@@ -63,8 +63,7 @@ Send the following JSON fields, seperate or in the same JSON object.<br>
 <h4>REQUEST - Example websocket API request to send, receive messages</h4>
 {
   "messages": ["$VIDEO;123456;all;4;20231003-164514;5", "$VIDEO;654321;all;4;20231003-164514;5"],
-  "subscriptions": ["123456", "654321"],
-  "getConnectedDevices": true
+  "subscriptions": ["123456", "654321"]
 }
 <br>
 
@@ -74,14 +73,6 @@ Send the following JSON fields, seperate or in the same JSON object.<br>
   "packetTime": "2024-08-17T12:35:04Z",
   "message": "$VIDEO;123456;20240817-123504;pokpok\r",
   "direction": "from"
-}
-<br>
-
-<h4>RESPONSE - Example list of connected devices sent in resopnse to request</h4>
-{
-  "connectedDevicesList": [
-    "123456"
-  ]
 }
 <br><br>
 

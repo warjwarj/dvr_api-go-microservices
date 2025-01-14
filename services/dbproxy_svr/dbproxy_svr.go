@@ -14,10 +14,11 @@ import (
 	utils "dvr_api-go-microservices/pkg/utils"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	zap "go.uber.org/zap"
+
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	zap "go.uber.org/zap"
 )
 
 type DbProxySvr struct {
@@ -72,11 +73,6 @@ func (dps *DbProxySvr) Run() {
 
 // serve the http API
 func (dps *DbProxySvr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// // check edge cases
-	// if r.Method != http.MethodPost {
-	// 	w.WriteHeader(http.StatusBadRequest)
-	// 	return
-	// }
 
 	// check cors if in prod
 	if !config.PROD {
@@ -85,18 +81,18 @@ func (dps *DbProxySvr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		dps.logger.Fatal("cors enabled on http server, disable in prod")
 	}
 
-	// read the bytes
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		dps.logger.Error("Unable to read request body", zap.Error(err))
-		return
-	}
-
 	// parse the request type reqType
 	query := r.URL.Query()
 	reqType := query.Get("reqType")
 
 	if reqType == "MessageHistory" {
+		// read the bytes
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			dps.logger.Error("Unable to read request body", zap.Error(err))
+			return
+		}
+
 		// unmarshal bytes into a struct we can work with
 		var req utils.ApiRequest_HTTP
 		err = json.Unmarshal(body, &req)
