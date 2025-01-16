@@ -58,3 +58,11 @@ type DeviceConnectionStateChange struct {
 	DeviceId     string `json:"DeviceId"`     // device state change is effect of
 	IsConnection bool   `json:"IsConnection"` // if true device is connecting, false device is disconnecting
 }
+
+// use to describe video requests so we can match them across servers
+type VideoDescription struct {
+	DeviceId  string `json:DeviceId`
+	StartTime string `json:StartTime`
+	Length    string `json:Length`
+	VideoLink string `json:VideoLink`
+}

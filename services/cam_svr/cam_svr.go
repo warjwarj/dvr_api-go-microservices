@@ -56,7 +56,7 @@ func (s *CamSvr) Run() {
 	if err != nil {
 		s.logger.Fatal("error listening on %v: %v", zap.String("s.endpoint", s.endpoint), zap.Error(err))
 	} else {
-		s.logger.Info("device server listening on: %v", zap.String("s.endpoint", s.endpoint))
+		s.logger.Info("cam server listening on: %v", zap.String("s.endpoint", s.endpoint))
 	}
 
 	// // start the output and input from the message broker
@@ -73,11 +73,11 @@ func (s *CamSvr) Run() {
 			s.logger.Info("error accepting websocket connection: %v", zap.Error(err))
 			continue
 		}
-		s.logger.Info("connection accepted on device svr...")
+		s.logger.Info("connection accepted on cam svr...")
 		go func() {
 			err := s.deviceConnLoop(c)
 			if err != nil {
-				s.logger.Error("error in device connection loop: %v", zap.Error(err))
+				s.logger.Error("error in cam server connection loop: %v", zap.Error(err))
 			}
 			c.Close()
 		}()
@@ -91,50 +91,51 @@ func (s *CamSvr) deviceConnLoop(conn net.Conn) error {
 	defer conn.Close()
 
 	// Buffers
-	rawHeader := make([]byte, 32)
-	payloadHeaderLenBuffer := make([]byte, 6)
-	payloadBodyLenBuffer := make([]byte, 10)
+	frameHeaderBuf := make([]byte, 32)
+	payloadHeaderBuf := make([]byte, 128)
+	payloadBodyBuf := make([]byte, 4194304)
 
 	// loop vars
 	firstPacket := true
 
 	for {
-		// Read the raw header
-		_, err := io.ReadFull(conn, rawHeader)
+		// Read the frame header
+		_, err := io.ReadFull(conn, frameHeaderBuf)
 		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
 			return fmt.Errorf("Failed to read raw header: %v", err)
 		}
 
 		// Check for $FILEEND signal
-		if string(rawHeader[:7]) == "$FILEEND" {
+		if strings.HasPrefix(string(frameHeaderBuf), "$FILEEND") {
 			break
 		}
 
-		// Parse lengths
-		copy(payloadHeaderLenBuffer, rawHeader[14:20])
-		copy(payloadBodyLenBuffer, rawHeader[21:31])
-
-		fmt.Println(string(payloadHeaderLenBuffer))
-
-		// parse header length
-		payloadHeaderLen, err := strconv.ParseInt(strings.TrimPrefix(string(payloadHeaderLenBuffer), "0x"), 16, 64)
+		// get header length
+		payloadHeaderLenBuf := frameHeaderBuf[14:20]
+		payloadHeaderLen, err := strconv.ParseInt(strings.TrimPrefix(string(payloadHeaderLenBuf), "0x"), 16, 64)
 		if err != nil {
 			return fmt.Errorf("failed to parse payload header length: %v", err)
 		}
+		fmt.Println("Header len", payloadHeaderLen)
 
-		// parse body length
-		payloadBodyLen, err := strconv.ParseInt(strings.TrimPrefix(string(payloadBodyLenBuffer), "0x"), 16, 64)
+		// get body length
+		payloadBodyLenBuf := frameHeaderBuf[21:31]
+		payloadBodyLen, err := strconv.ParseInt(strings.TrimPrefix(string(payloadBodyLenBuf), "0x"), 16, 64)
 		if err != nil {
 			return fmt.Errorf("failed to parse payload body length: %v", err)
 		}
+		fmt.Println("Body len", payloadBodyLen)
 
 		// Read payload header
-		payloadHeader := make([]byte, payloadHeaderLen)
-		_, err = io.ReadFull(conn, payloadHeader)
+		payloadHeaderBuf = make([]byte, payloadHeaderLen)
+		_, err = io.ReadFull(conn, payloadHeaderBuf)
 		if err != nil {
 			return fmt.Errorf("Failed to read payload header: %v", err)
 		}
-		payloadHeaderString := string(payloadHeader)
+		payloadHeaderString := string(payloadHeaderBuf)
 
 		if firstPacket {
 			if !strings.HasPrefix(payloadHeaderString, "$FILE") {
@@ -144,15 +145,15 @@ func (s *CamSvr) deviceConnLoop(conn net.Conn) error {
 		}
 
 		// Read payload body
-		payloadBody := make([]byte, payloadBodyLen-payloadHeaderLen)
-		_, err = io.ReadFull(conn, payloadBody)
+		payloadBodyBuf = make([]byte, payloadBodyLen)
+		_, err = io.ReadFull(conn, payloadBodyBuf)
 		if err != nil {
 			return fmt.Errorf("Failed to read payload body: %v", err)
 		}
 
 		// Save payload body to file
 		filePath := "./output.avi"
-		err = os.WriteFile(filePath, payloadBody, 0644)
+		err = os.WriteFile(filePath, payloadBodyBuf, 0644)
 		if err != nil {
 			return fmt.Errorf("Failed to write to file: %v", err)
 		}

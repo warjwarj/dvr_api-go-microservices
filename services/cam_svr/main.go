@@ -50,7 +50,7 @@ func main() {
 	// create our device server struct
 	devSvr, err := NewCamSvr(logger, config.CAM_SVR_ENDPOINT, 2048, 10, rabbitmqAmqpChannel)
 	if err != nil {
-		logger.Fatal("fatal error creating device server: %v", zap.Error(err))
+		logger.Fatal("fatal error creating cam server: %v", zap.Error(err))
 		return
 	}
 
