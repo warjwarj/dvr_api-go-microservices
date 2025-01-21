@@ -124,7 +124,6 @@ func (dps *DbProxySvr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			dps.logger.Error("failed to query msg history: %v", zap.Error(err))
 		}
-		fmt.Println(res)
 
 		// marshal back into json
 		bytes, err := json.Marshal(res)

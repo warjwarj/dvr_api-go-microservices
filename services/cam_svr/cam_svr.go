@@ -84,24 +84,31 @@ func (s *CamSvr) Run() {
 	}
 }
 
-// better way to do this might be to write to disk buffer by buffer
-// receive connections and messages. Input from devices
+// TODO implement io.Reader
+// receive video
 func (s *CamSvr) deviceConnLoop(conn net.Conn) error {
-
+	// close connection upon exit
 	defer conn.Close()
+
+	// video file with random temp name
+	randFileName := utils.GenerateRandomString(10)
+	f, err := os.OpenFile(randFileName, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	if err != nil {
+		return fmt.Errorf("error creating scratch file to save video: %v", err)
+	}
+	defer f.Close()
 
 	// Buffers
 	frameHeaderBuf := make([]byte, 32)
-	payloadHeaderBuf := make([]byte, 128)
-	payloadBodyBuf := make([]byte, 4194304)
+	framePayloadHeaderBuf := make([]byte, 128)
+	framePayloadBodyBuf := make([]byte, 4194304)
 
-	// loop vars
-	firstPacket := true
+	// alter this object as needed
+	//var videoDescription utils.VideoDescription
 
 	for {
 		// Read the frame header
-		_, err := io.ReadFull(conn, frameHeaderBuf)
-		if err != nil {
+		if _, err := io.ReadFull(conn, frameHeaderBuf); err != nil {
 			if err == io.EOF {
 				return nil
 			}
@@ -113,49 +120,35 @@ func (s *CamSvr) deviceConnLoop(conn net.Conn) error {
 			break
 		}
 
-		// get header length
+		// get payload header length
 		payloadHeaderLenBuf := frameHeaderBuf[14:20]
 		payloadHeaderLen, err := strconv.ParseInt(strings.TrimPrefix(string(payloadHeaderLenBuf), "0x"), 16, 64)
 		if err != nil {
 			return fmt.Errorf("failed to parse payload header length: %v", err)
 		}
-		fmt.Println("Header len", payloadHeaderLen)
 
-		// get body length
+		// get payload body length
 		payloadBodyLenBuf := frameHeaderBuf[21:31]
 		payloadBodyLen, err := strconv.ParseInt(strings.TrimPrefix(string(payloadBodyLenBuf), "0x"), 16, 64)
 		if err != nil {
 			return fmt.Errorf("failed to parse payload body length: %v", err)
 		}
-		fmt.Println("Body len", payloadBodyLen)
 
-		// Read payload header
-		payloadHeaderBuf = make([]byte, payloadHeaderLen)
-		_, err = io.ReadFull(conn, payloadHeaderBuf)
-		if err != nil {
-			return fmt.Errorf("Failed to read payload header: %v", err)
-		}
-		payloadHeaderString := string(payloadHeaderBuf)
-
-		if firstPacket {
-			if !strings.HasPrefix(payloadHeaderString, "$FILE") {
-				return fmt.Errorf("Expected $FILE packets, not %s", payloadHeaderString)
-			}
-			firstPacket = false
+		// read payload header
+		framePayloadHeaderBuf = make([]byte, payloadHeaderLen)
+		if _, err = io.ReadFull(conn, framePayloadHeaderBuf); err != nil {
+			return fmt.Errorf("failed to read payload header: %v", err)
 		}
 
-		// Read payload body
-		payloadBodyBuf = make([]byte, payloadBodyLen)
-		_, err = io.ReadFull(conn, payloadBodyBuf)
-		if err != nil {
-			return fmt.Errorf("Failed to read payload body: %v", err)
+		// read payload body
+		framePayloadBodyBuf = make([]byte, payloadBodyLen)
+		if _, err = io.ReadFull(conn, framePayloadBodyBuf); err != nil {
+			return fmt.Errorf("failed to read payload body: %v", err)
 		}
 
-		// Save payload body to file
-		filePath := "./output.avi"
-		err = os.WriteFile(filePath, payloadBodyBuf, 0644)
-		if err != nil {
-			return fmt.Errorf("Failed to write to file: %v", err)
+		// write vid data to file
+		if _, err := f.Write(framePayloadBodyBuf); err != nil {
+			return fmt.Errorf("failed to write to file: %v", err)
 		}
 	}
 	fmt.Println("file writen successfully")

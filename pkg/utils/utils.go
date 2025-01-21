@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
@@ -123,6 +124,22 @@ func (d *Dictionary[T]) Delete(key string) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 	delete(d.internal, key)
+}
+
+/*
+~~~~~~~~~~~~~~~
+GENERIC UTILS
+~~~~~~~~~~~~~~~
+*/
+
+func GenerateRandomString(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	seededRand := rand.New(rand.NewSource(time.Now().UnixNano()))
+	randomString := make([]byte, length)
+	for i := range randomString {
+		randomString[i] = charset[seededRand.Intn(len(charset))]
+	}
+	return string(randomString)
 }
 
 /*
