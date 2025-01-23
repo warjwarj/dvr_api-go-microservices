@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -90,13 +91,12 @@ func (s *CamSvr) deviceConnLoop(conn net.Conn) error {
 	// close connection upon exit
 	defer conn.Close()
 
-	// video file with random temp name
-	randFileName := utils.GenerateRandomString(10)
-	f, err := os.OpenFile(randFileName, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	// Create the folder in the current directory
+	folderPath := "/var/tmp/" + utils.GenerateRandomString(10)
+	err := os.Mkdir(folderPath, 0777) // 0755 gives read, write, and execute permissions for the owner, and read and execute for others.
 	if err != nil {
-		return fmt.Errorf("error creating scratch file to save video: %v", err)
+		return fmt.Errorf("Error creating folder:", err)
 	}
-	defer f.Close()
 
 	// Buffers
 	frameHeaderBuf := make([]byte, 32)
@@ -110,7 +110,7 @@ func (s *CamSvr) deviceConnLoop(conn net.Conn) error {
 		// Read the frame header
 		if _, err := io.ReadFull(conn, frameHeaderBuf); err != nil {
 			if err == io.EOF {
-				return nil
+				break
 			}
 			return fmt.Errorf("Failed to read raw header: %v", err)
 		}
@@ -146,12 +146,33 @@ func (s *CamSvr) deviceConnLoop(conn net.Conn) error {
 			return fmt.Errorf("failed to read payload body: %v", err)
 		}
 
-		// write vid data to file
-		if _, err := f.Write(framePayloadBodyBuf); err != nil {
-			return fmt.Errorf("failed to write to file: %v", err)
+		// write vid data to file named for packet index
+		packetindex := strings.Split(string(frameHeaderBuf), ";")[1]
+		filepath := folderPath + "/" + packetindex
+		if err = os.WriteFile(filepath, framePayloadBodyBuf, 0777); err != nil {
+			return fmt.Errorf("failed to write to file")
 		}
+		fmt.Println("Read and saved file: ", string(framePayloadHeaderBuf))
 	}
-	fmt.Println("file writen successfully")
+
+	// define the file concat command
+	convertCmd := exec.Command("./convert.sh", folderPath)
+	concatCmd := exec.Command("./concat.sh", folderPath)
+
+	// Set the script's output to be shown in the Go program's output
+	convertCmd.Stdout = os.Stdout
+	concatCmd.Stdout = os.Stdout
+	convertCmd.Stderr = os.Stderr
+	concatCmd.Stderr = os.Stderr
+
+	// Run the shell scripts
+	if err = convertCmd.Run(); err != nil {
+		return fmt.Errorf("error running shell script convert.sh: %v", err)
+	}
+	if err = concatCmd.Run(); err != nil {
+		return fmt.Errorf("error running shell script concat.sh: %v", err)
+	}
+
 	return nil
 }
 

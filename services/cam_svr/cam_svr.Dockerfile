@@ -9,6 +9,11 @@ WORKDIR /app
 # Copy shared packages
 COPY ./pkg pkg
 
+# so we can concat files
+RUN apt-get -y update
+RUN apt-get -y upgrade
+RUN apt-get install -y ffmpeg
+
 # In the docker compose file we set build context to the root dir of the project, which means we have to specify this service's path from the root of the project. 
 # We copy the directory structure of the project on the host machine into the container as all imports are relative to the project structure, would break pkg imports otherwise.
 
@@ -23,6 +28,12 @@ RUN go mod download
 
 # compile the program out into the WORKDIR. params: CGO_ENABLED = 'c language go', GOOS = 'go operating system'
 RUN CGO_ENABLED=0 GOOS=linux go build -o /app/bin/cam_svr.bin
+
+# copy over and make our script/s executable
+COPY ./services/cam_svr/concat.sh /app/services/cam_svr/
+COPY ./services/cam_svr/convert.sh /app/services/cam_svr/
+RUN chmod +x /app/bin/cam_svr.bin concat.sh
+RUN chmod +x /app/bin/cam_svr.bin convert.sh
 
 # run the app
 CMD ["/app/bin/cam_svr.bin"]
