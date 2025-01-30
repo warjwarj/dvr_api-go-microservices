@@ -92,7 +92,9 @@ func (s *CamSvr) deviceConnLoop(conn net.Conn) error {
 	defer conn.Close()
 
 	// Create the folder in the current directory
-	folderPath := "/var/tmp/" + utils.GenerateRandomString(10)
+	saveLocationRoot := "/var/tmp/"
+	// Create the folder in the current directory
+	folderPath := saveLocationRoot + utils.GenerateRandomString(10)
 	err := os.Mkdir(folderPath, 0777) // 0755 gives read, write, and execute permissions for the owner, and read and execute for others.
 	if err != nil {
 		return fmt.Errorf("Error creating folder:", err)
@@ -103,10 +105,13 @@ func (s *CamSvr) deviceConnLoop(conn net.Conn) error {
 	framePayloadHeaderBuf := make([]byte, 128)
 	framePayloadBodyBuf := make([]byte, 4194304)
 
-	// alter this object as needed
-	//var videoDescription utils.VideoDescription
+	receivedVideoLog := make(map[string]utils.VideoDescription)
 
 	for {
+
+		// loop variable to kep track of packet metadata
+		var filePacketHeader utils.FilePacketHeader
+
 		// Read the frame header
 		if _, err := io.ReadFull(conn, frameHeaderBuf); err != nil {
 			if err == io.EOF {
@@ -139,6 +144,12 @@ func (s *CamSvr) deviceConnLoop(conn net.Conn) error {
 		if _, err = io.ReadFull(conn, framePayloadHeaderBuf); err != nil {
 			return fmt.Errorf("failed to read payload header: %v", err)
 		}
+		// read vals from header into vid desc
+		if utils.ParseFilePacketHeader(string(framePayloadHeaderBuf), &filePacketHeader); err != nil {
+			return err
+		}
+		// create our video descriptor string
+		videoDescriptorStr := utils.VideoDescriptorStr(filePacketHeader)
 
 		// read payload body
 		framePayloadBodyBuf = make([]byte, payloadBodyLen)
@@ -146,9 +157,21 @@ func (s *CamSvr) deviceConnLoop(conn net.Conn) error {
 			return fmt.Errorf("failed to read payload body: %v", err)
 		}
 
+		// if we've not received video from this channel before then instantiate an entry for it in the map
+		if vidDesc, exists := receivedVideoLog[filePacketHeader.Channel]; !exists {
+			receivedVideoLog[filePacketHeader.Channel] = utils.VideoDescription{
+				DeviceId:         filePacketHeader.DeviceId,
+				Channel:          filePacketHeader.Channel,
+				RequestStartTime: filePacketHeader.RequestStartTime,
+				VideoLength:      filePacketHeader.VideoLength,
+			}
+		} else {
+			// else we have received video from this channel before, so just increase the video length tally
+			vidDesc.VideoLength += filePacketHeader.VideoLength
+		}
+
 		// write vid data to file named for packet index
-		packetindex := strings.Split(string(frameHeaderBuf), ";")[1]
-		filepath := folderPath + "/" + packetindex
+		filepath := folderPath + "/" + videoDescriptorStr
 		if err = os.WriteFile(filepath, framePayloadBodyBuf, 0777); err != nil {
 			return fmt.Errorf("failed to write to file")
 		}
@@ -166,12 +189,15 @@ func (s *CamSvr) deviceConnLoop(conn net.Conn) error {
 	concatCmd.Stderr = os.Stderr
 
 	// Run the shell scripts
-	if err = convertCmd.Run(); err != nil {
+	if err := convertCmd.Run(); err != nil {
 		return fmt.Errorf("error running shell script convert.sh: %v", err)
 	}
-	if err = concatCmd.Run(); err != nil {
+	if err := concatCmd.Run(); err != nil {
 		return fmt.Errorf("error running shell script concat.sh: %v", err)
 	}
+
+	fmt.Println(receivedVideoLog)
+	fmt.Println("TODO MAKE VID LENGTH AN INT NOT A STRING")
 
 	return nil
 }

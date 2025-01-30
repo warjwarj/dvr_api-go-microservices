@@ -185,6 +185,36 @@ func GetIdFromMessage(message *string) (*string, error) {
 	return nil, fmt.Errorf("couldn't extract id from: %v", message)
 }
 
+// $FILE;V03;1221223799;1;1;20241114-170853;240;20241114-170810;60;4742224
+// [0 $FILE];[1 protocol];[2 DeviceID];[3 SN];[4 camera];[5 RStart];[6 Rlen];[7 VStart];[8 Vlen];[9 filelen]<CR>[bytes]
+
+// This is how we name the video, we can read file name in bash script and concat correctly
+// 1221223799_20241114-170853_24_8_2 <-- example
+func VideoDescriptorStr(strct FilePacketHeader) string {
+	return strct.DeviceId + "_" + strct.RequestStartTime + "_" + strct.VideoLength + "_" + strct.SerialNum + "_" + strct.Channel
+}
+
+// $FILE;V03;1221223799;1;1;20241114-170853;240;20241114-170810;60;4742224
+// [0 $FILE];[1 protocol];[2 DeviceID];[3 SN];[4 camera];[5 RStart];[6 Rlen];[7 VStart];[8 Vlen];[9 filelen]<CR>[bytes]
+
+func ParseFilePacketHeader(str string, strct *FilePacketHeader) error {
+	if str == "" || strct == nil {
+		fmt.Errorf("string or struct passed to this function were nil")
+	}
+	splitStr := strings.Split(str, ";")
+	if splitStr[0] != "$FILE" {
+		fmt.Errorf("required $FILE packets")
+	}
+	strct.DeviceId = splitStr[2]
+	strct.Channel = splitStr[4]
+	strct.SerialNum = splitStr[3]
+	strct.RequestStartTime = splitStr[5]
+	strct.RequestLength = splitStr[6]
+	strct.VideoStartTime = splitStr[7]
+	strct.VideoLength = splitStr[8]
+	return nil
+}
+
 /*
 ~~~~~~~~~~~~~~~
 MONGODB HELPERS

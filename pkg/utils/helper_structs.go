@@ -59,10 +59,23 @@ type DeviceConnectionStateChange struct {
 	IsConnection bool   `json:"IsConnection"` // if true device is connecting, false device is disconnecting
 }
 
-// use to describe video requests so we can match them across servers
+// used to describe video post-processing by ffmpeg, as we will upload it to the cloud.
 type VideoDescription struct {
-	DeviceId  string `json:DeviceId`
-	StartTime string `json:StartTime`
-	Length    string `json:Length`
-	VideoLink string `json:VideoLink`
+	DeviceId         string `json:DeviceId`
+	Channel          string `json:Channel`
+	RequestStartTime string `json:RequestStartTime`
+	VideoLength      string `json:VideoLength`
+	VideoLink        string `json:VideoLink`
+}
+
+// represents a $FILE packet header's values in a struct for easy access.
+type FilePacketHeader struct {
+	DeviceId         string `json:DeviceId`
+	Channel          string `json:Channel`
+	SerialNum        string `json:SerialNum`
+	RequestStartTime string `json:RequestStartTime`
+	RequestLength    string `json:RequestLength`
+	VideoStartTime   string `json:VideoStartTime`
+	VideoLength      string `json:VideoLength`
+	FileLen          string `json:FileLen`
 }
