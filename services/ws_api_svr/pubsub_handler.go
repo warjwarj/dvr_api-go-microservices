@@ -38,6 +38,7 @@ func (sh *PubSubHandler) Run() error {
 
 	// start the intake of device messages from the broker
 	go sh.pipeMessagesFromBroker(config.MSGS_FROM_DEVICE_SVR)
+	go sh.pipeVideoDescriptionsFromBroker(config.VIDEO_DESCRIPTION_EXCHANGE)
 
 	// handle client messages, main program loop
 	for i := 0; ; i++ {
@@ -118,64 +119,17 @@ func (sh *PubSubHandler) Publish(msgWrap *utils.MessageWrapper) error {
 // Take messages from the broker and send them to clients. Messages from devices
 func (s *PubSubHandler) pipeMessagesFromBroker(exchangeName string) {
 
-	// declare exchange we are taking messages from.
-	err := s.rabbitmqAmqpChannel.ExchangeDeclare(
-		exchangeName, // name
-		"fanout",     // type
-		true,         // durable
-		false,        // auto-deleted
-		false,        // internal
-		false,        // no-wait
-		nil,          // arguments
-	)
+	// setup delivery pipe from broker
+	err, deliveryChan := utils.SetupPipeFromBroker(exchangeName, s.rabbitmqAmqpChannel)
 	if err != nil {
-		s.logger.Fatal("error piping messages from message broker %v", zap.Error(err))
+		s.logger.Error("error setting up pipe from broker", zap.Error(err))
 	}
 
-	// declare a queue onto the exchange above
-	q, err := s.rabbitmqAmqpChannel.QueueDeclare(
-		"",    // name -
-		false, // durable
-		false, // delete when unused
-		true,  // exclusive
-		false, // no-wait
-		nil,   // arguments
-	)
-	if err != nil {
-		s.logger.Fatal("error declaring queue %v", zap.Error(err))
-	}
-
-	// bind the queue onto the exchange
-	err = s.rabbitmqAmqpChannel.QueueBind(
-		q.Name,       // queue name
-		"",           // routing key
-		exchangeName, // exchange
-		false,
-		nil,
-	)
-	if err != nil {
-		s.logger.Error("error binding queue %v", zap.Error(err))
-	}
-
-	// get a golang channel we can read messages from.
-	msgs, err := s.rabbitmqAmqpChannel.Consume(
-		q.Name, // name - WE DEPEND ON THE QUEUE BEING NAMED THE SAME AS THE EXCHANGE - ONLY ONE Q CONSUMING FROM THIS EXCHANGE
-		"",     // consumer
-		true,   // auto-ack
-		false,  // exclusive
-		false,  // no-local
-		false,  // no-wait
-		nil,    // args
-	)
-	if err != nil {
-		s.logger.Error("error consuming from queue %v", zap.Error(err))
-	}
-
-	// reuse it in loop
+	// loop var, reused
 	var msgWrap utils.MessageWrapper
 
 	// connection loop
-	for d := range msgs {
+	for d := range deliveryChan {
 
 		// this is the message revceived from broker
 		err := json.Unmarshal(d.Body, &msgWrap)
@@ -185,5 +139,45 @@ func (s *PubSubHandler) pipeMessagesFromBroker(exchangeName string) {
 
 		// publish message to all of our clients who have subscribed to it
 		s.Publish(&msgWrap)
+	}
+}
+
+func (s *PubSubHandler) pipeVideoDescriptionsFromBroker(exchangeName string) {
+
+	// setup delivery pipe from broker
+	err, deliveryChan := utils.SetupPipeFromBroker(exchangeName, s.rabbitmqAmqpChannel)
+	if err != nil {
+		s.logger.Error("error setting up pipe from broker", zap.Error(err))
+	}
+
+	// reuse it in loop
+	var msgWrap utils.VideoDescription
+
+	// connection loop
+	for d := range deliveryChan {
+
+		// this is the message revceived from broker
+		err := json.Unmarshal(d.Body, &msgWrap)
+		if err != nil {
+			s.logger.Error("received erroneous value from message broker, couldn't unmarshal into message wrapper")
+		}
+
+		// TODOTODOTODO
+		// TODOTODOTODO
+		// TODOTODOTODO
+		// TODOTODOTODO
+		// TODOTODOTODO
+		// TODOTODOTODO
+		//
+		//
+		// TODOTODOTODO
+		// TODOTODOTODO
+		// TODOTODOTODO
+		// TODOTODOTODO
+		// TODOTODOTODO
+		// TODOTODOTODO
+		// TODOTODOTODO
+		// TODOTODOTODO
+		// TODOTODOTODO
 	}
 }

@@ -155,18 +155,9 @@ func (s *WsApiSvr) connHandler(conn *websocket.Conn) error {
 // take messages from devices and publish them to broker.
 func (s *WsApiSvr) pipeMessagesToBroker(exchangeName string) {
 
-	// declare the device message output exchange
-	err := s.rabbitmqAmqpChannel.ExchangeDeclare(
-		exchangeName, // name
-		"fanout",     // type
-		true,         // durable
-		false,        // auto-deleted
-		false,        // internal
-		false,        // no-wait
-		nil,          // arguments
-	)
-	if err != nil {
-		s.logger.Fatal("error piping messages from message broker %v", zap.Error(err))
+	// set up the pipeline to send messages to the broker
+	if err := utils.SetupPipeToBroker(exchangeName, s.rabbitmqAmqpChannel); err != nil {
+		s.logger.Error("Error setting up pipe to broker", zap.Error(err))
 	}
 
 	// loop over channel and pipe messages into the rabbitmq exchange.

@@ -204,57 +204,10 @@ func (dps *DbProxySvr) QueryMsgHistory(devices []string, before time.Time, after
 
 func (dps *DbProxySvr) pipeMessagesFromQueueIntoDatabase(directionDescriptor string, exchangeName string) {
 
-	// declare exchange we are taking messages from.
-	err := dps.rabbitmqAmqpChannel.ExchangeDeclare(
-		exchangeName, // name
-		"fanout",     // type
-		true,         // durable
-		false,        // auto-deleted
-		false,        // internal
-		false,        // no-wait
-		nil,          // arguments
-	)
+	// setup delivery pipe from broker
+	err, deliveryChan := utils.SetupPipeFromBroker(exchangeName, dps.rabbitmqAmqpChannel)
 	if err != nil {
-		dps.logger.Fatal("error piping messages from message broker %v", zap.Error(err))
-	}
-
-	// declare a queue onto the exchange above
-	q, err := dps.rabbitmqAmqpChannel.QueueDeclare(
-		"",    // name -
-		false, // durable
-		false, // delete when unused
-		true,  // exclusive
-		false, // no-wait
-		nil,   // arguments
-	)
-	if err != nil {
-		dps.logger.Fatal("error declaring queue %v", zap.Error(err))
-	}
-
-	// bind the queue onto the exchange
-	err = dps.rabbitmqAmqpChannel.QueueBind(
-		q.Name,       // queue name
-		"",           // routing key
-		exchangeName, // exchange
-		false,
-		nil,
-	)
-	if err != nil {
-		dps.logger.Error("error binding queue %v", zap.Error(err))
-	}
-
-	// get a golang channel we can read messages from.
-	msgs, err := dps.rabbitmqAmqpChannel.Consume(
-		q.Name, // name - WE DEPEND ON THE QUEUE BEING NAMED THE SAME AS THE EXCHANGE - ONLY ONE Q CONSUMING FROM THIS EXCHANGE
-		"",     // consumer
-		true,   // auto-ack
-		false,  // exclusive
-		false,  // no-local
-		false,  // no-wait
-		nil,    // args
-	)
-	if err != nil {
-		dps.logger.Error("error consuming from queue %v", zap.Error(err))
+		dps.logger.Error("error setting up pipe from broker", zap.Error(err))
 	}
 
 	// this is the collection we're going to be putting the messages into
@@ -264,7 +217,7 @@ func (dps *DbProxySvr) pipeMessagesFromQueueIntoDatabase(directionDescriptor str
 	var msgSchema utils.Message_Schema
 
 	// loop over the device message channel and put it into the database
-	for d := range msgs {
+	for d := range deliveryChan {
 
 		// this is the message revceived from broker
 		var msgWrap utils.MessageWrapper
@@ -313,57 +266,10 @@ func (dps *DbProxySvr) pipeMessagesFromQueueIntoDatabase(directionDescriptor str
 // Take messages from the broker and send them to clients. Messages from devices
 func (dps *DbProxySvr) pipeConnectedDevicesFromBroker(exchangeName string) {
 
-	// declare exchange we are taking messages from.
-	err := dps.rabbitmqAmqpChannel.ExchangeDeclare(
-		exchangeName, // name
-		"fanout",     // type
-		true,         // durable
-		false,        // auto-deleted
-		false,        // internal
-		false,        // no-wait
-		nil,          // arguments
-	)
+	// setup delivery pipe from broker
+	err, deliveryChan := utils.SetupPipeFromBroker(exchangeName, dps.rabbitmqAmqpChannel)
 	if err != nil {
-		dps.logger.Fatal("error piping messages from message broker %v", zap.Error(err))
-	}
-
-	// declare a queue onto the exchange above
-	q, err := dps.rabbitmqAmqpChannel.QueueDeclare(
-		"",    // name -
-		false, // durable
-		false, // delete when unused
-		true,  // exclusive
-		false, // no-wait
-		nil,   // arguments
-	)
-	if err != nil {
-		dps.logger.Fatal("error declaring queue %v", zap.Error(err))
-	}
-
-	// bind the queue onto the exchange
-	err = dps.rabbitmqAmqpChannel.QueueBind(
-		q.Name,       // queue name
-		"",           // routing key
-		exchangeName, // exchange
-		false,
-		nil,
-	)
-	if err != nil {
-		dps.logger.Error("error binding queue %v", zap.Error(err))
-	}
-
-	// get a golang channel we can read messages from.
-	msgs, err := dps.rabbitmqAmqpChannel.Consume(
-		q.Name, // name - WE DEPEND ON THE QUEUE BEING NAMED THE SAME AS THE EXCHANGE - ONLY ONE Q CONSUMING FROM THIS EXCHANGE
-		"",     // consumer
-		true,   // auto-ack
-		false,  // exclusive
-		false,  // no-local
-		false,  // no-wait
-		nil,    // args
-	)
-	if err != nil {
-		dps.logger.Error("error consuming from queue %v", zap.Error(err))
+		dps.logger.Error("error setting up pipe from broker", zap.Error(err))
 	}
 
 	// declare collection, insert/initialise empty document for dev list
@@ -381,7 +287,7 @@ func (dps *DbProxySvr) pipeConnectedDevicesFromBroker(exchangeName string) {
 	var devConnStateChange utils.DeviceConnectionStateChange
 
 	// connection loop
-	for d := range msgs {
+	for d := range deliveryChan {
 
 		// this is the message revceived from broker
 		err := json.Unmarshal(d.Body, &devConnStateChange)

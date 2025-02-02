@@ -64,7 +64,7 @@ type VideoDescription struct {
 	DeviceId         string `json:DeviceId`
 	Channel          string `json:Channel`
 	RequestStartTime string `json:RequestStartTime`
-	VideoLength      string `json:VideoLength`
+	VideoLength      int    `json:VideoLength`
 	VideoLink        string `json:VideoLink`
 }
 

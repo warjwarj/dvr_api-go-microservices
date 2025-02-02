@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	amqp "github.com/rabbitmq/amqp091-go" // rabbitmq import
 	bson "go.mongodb.org/mongo-driver/bson"
 	mongo "go.mongodb.org/mongo-driver/mongo"
 	options "go.mongodb.org/mongo-driver/mongo/options"
@@ -249,4 +250,83 @@ func NewDBConnection(logger *zap.Logger, uri string, dbName string) (*MongoDBCon
 		Uri:    uri,
 		DbName: dbName,
 	}, nil
+}
+
+/*
+~~~~~~~~~~~~~~~
+RABBITMQ HELPERS
+~~~~~~~~~~~~~~~
+*/
+
+func SetupPipeFromBroker(exchangeName string, rabMqChan *amqp.Channel) (error, <-chan amqp.Delivery) {
+	// declare exchange we are taking messages from.
+	err := rabMqChan.ExchangeDeclare(
+		exchangeName, // name
+		"fanout",     // type
+		true,         // durable
+		false,        // auto-deleted
+		false,        // internal
+		false,        // no-wait
+		nil,          // arguments
+	)
+	if err != nil {
+		return fmt.Errorf("error piping messages from message broker %v", err), nil
+	}
+
+	// declare a queue onto the exchange above
+	q, err := rabMqChan.QueueDeclare(
+		"",    // name -
+		false, // durable
+		false, // delete when unused
+		true,  // exclusive
+		false, // no-wait
+		nil,   // arguments
+	)
+	if err != nil {
+		return fmt.Errorf("error piping messages from message broker %v", err), nil
+	}
+
+	// bind the queue onto the exchange
+	err = rabMqChan.QueueBind(
+		q.Name,       // queue name
+		"",           // routing key
+		exchangeName, // exchange
+		false,
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("error binding queue %v", err), nil
+	}
+
+	// get a golang channel we can read messages from.
+	msgs, err := rabMqChan.Consume(
+		q.Name, // name - WE DEPEND ON THE QUEUE BEING NAMED THE SAME AS THE EXCHANGE - ONLY ONE Q CONSUMING FROM THIS EXCHANGE
+		"",     // consumer
+		true,   // auto-ack
+		false,  // exclusive
+		false,  // no-local
+		false,  // no-wait
+		nil,    // args
+	)
+	if err != nil {
+		return fmt.Errorf("error consuming from queue %v", err), nil
+	}
+	return nil, msgs
+}
+
+func SetupPipeToBroker(exchangeName string, rabMqChan *amqp.Channel) error {
+	// declare the device message output exchange
+	err := rabMqChan.ExchangeDeclare(
+		exchangeName, // name
+		"fanout",     // type
+		true,         // durable
+		false,        // auto-deleted
+		false,        // internal
+		false,        // no-wait
+		nil,          // arguments
+	)
+	if err != nil {
+		return fmt.Errorf("error declaring exchange  %v", err)
+	}
+	return nil
 }

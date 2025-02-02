@@ -181,18 +181,9 @@ func (s *DeviceSvr) deviceConnLoop(conn net.Conn) error {
 // publish device messages to broker
 func (s *DeviceSvr) pipeMessagesToBroker(exchangeName string) {
 
-	// declare the device message output exchange
-	err := s.rabbitmqAmqpChannel.ExchangeDeclare(
-		exchangeName, // name
-		"fanout",     // type
-		true,         // durable
-		false,        // auto-deleted
-		false,        // internal
-		false,        // no-wait
-		nil,          // arguments
-	)
-	if err != nil {
-		s.logger.Fatal("error piping messages from message broker %v", zap.Error(err))
+	// set up the pipeline to send messages to the broker
+	if err := utils.SetupPipeToBroker(exchangeName, s.rabbitmqAmqpChannel); err != nil {
+		s.logger.Error("Error setting up pipe to broker", zap.Error(err))
 	}
 
 	// loop over channel and pipe messages into the rabbitmq exchange.
@@ -216,18 +207,9 @@ func (s *DeviceSvr) pipeMessagesToBroker(exchangeName string) {
 // publish device messages to broker
 func (s *DeviceSvr) pipeConnectedDevicesToBroker(exchangeName string) {
 
-	// declare the device message output exchange
-	err := s.rabbitmqAmqpChannel.ExchangeDeclare(
-		exchangeName, // name
-		"fanout",     // type
-		true,         // durable
-		false,        // auto-deleted
-		false,        // internal
-		false,        // no-wait
-		nil,          // arguments
-	)
-	if err != nil {
-		s.logger.Fatal("error piping messages from message broker %v", zap.Error(err))
+	// set up the pipeline to send messages to the broker
+	if err := utils.SetupPipeToBroker(exchangeName, s.rabbitmqAmqpChannel); err != nil {
+		s.logger.Error("Error setting up pipe to broker", zap.Error(err))
 	}
 
 	// this loop fires each time a device connects or disconnects
@@ -258,61 +240,14 @@ func (s *DeviceSvr) pipeConnectedDevicesToBroker(exchangeName string) {
 // Take messages from the broker and send them to devices.
 func (s *DeviceSvr) pipeMessagesFromBroker(exchangeName string) {
 
-	// declare exchange we are taking messages from.
-	err := s.rabbitmqAmqpChannel.ExchangeDeclare(
-		exchangeName, // name
-		"fanout",     // type
-		true,         // durable
-		false,        // auto-deleted
-		false,        // internal
-		false,        // no-wait
-		nil,          // arguments
-	)
+	// setup delivery pipe from broker
+	err, deliveryChan := utils.SetupPipeFromBroker(exchangeName, s.rabbitmqAmqpChannel)
 	if err != nil {
-		s.logger.Fatal("error piping messages from message broker %v", zap.Error(err))
-	}
-
-	// declare a queue onto the exchange above
-	q, err := s.rabbitmqAmqpChannel.QueueDeclare(
-		"",    // name -
-		false, // durable
-		false, // delete when unused
-		true,  // exclusive
-		false, // no-wait
-		nil,   // arguments
-	)
-	if err != nil {
-		s.logger.Fatal("error declaring queue %v", zap.Error(err))
-	}
-
-	// bind the queue onto the exchange
-	err = s.rabbitmqAmqpChannel.QueueBind(
-		q.Name,       // queue name
-		"",           // routing key
-		exchangeName, // exchange
-		false,
-		nil,
-	)
-	if err != nil {
-		s.logger.Error("error binding queue %v", zap.Error(err))
-	}
-
-	// get a golang channel we can read messages from.
-	msgs, err := s.rabbitmqAmqpChannel.Consume(
-		q.Name, // name - WE DEPEND ON THE QUEUE BEING NAMED THE SAME AS THE EXCHANGE - ONLY ONE Q CONSUMING FROM THIS EXCHANGE
-		"",     // consumer
-		true,   // auto-ack
-		false,  // exclusive
-		false,  // no-local
-		false,  // no-wait
-		nil,    // args
-	)
-	if err != nil {
-		s.logger.Error("error consuming from queue %v", zap.Error(err))
+		s.logger.Error("error setting up pipe from broker", zap.Error(err))
 	}
 
 	// connection loop
-	for d := range msgs {
+	for d := range deliveryChan {
 
 		// this is the message revceived from broker
 		var msgWrap utils.MessageWrapper
