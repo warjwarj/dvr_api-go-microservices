@@ -167,10 +167,12 @@ func (s *CamSvr) deviceConnLoop(conn net.Conn) error {
 		if vidDesc, exists := receivedVideoLog[filePacketHeader.Channel]; !exists {
 			// init struct describing concatatated video
 			receivedVideoLog[filePacketHeader.Channel] = utils.VideoDescription{
-				DeviceId:         filePacketHeader.DeviceId,
-				Channel:          filePacketHeader.Channel,
-				RequestStartTime: filePacketHeader.RequestStartTime,
-				VideoLength:      vidLengthInt,
+				DeviceId:               filePacketHeader.DeviceId,
+				Channel:                filePacketHeader.Channel,
+				RequestLength:          filePacketHeader.RequestLength,
+				RequestStartTime:       filePacketHeader.RequestStartTime,
+				VideoLength:            vidLengthInt,
+				VideoDescriptionString: videoDescriptorStr,
 			}
 		} else {
 			// else we have received video from this channel before, so just increase the video length tally

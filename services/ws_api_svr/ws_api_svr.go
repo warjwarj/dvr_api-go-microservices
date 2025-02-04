@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	config "dvr_api-go-microservices/pkg/config" // our shared config
@@ -22,6 +23,7 @@ type WsApiSvr struct {
 	endpoint            string                           // IP + port, ex: "192.168.1.77:9047"
 	svrMsgBufChan       chan utils.MessageWrapper        // channel we use to queue messages
 	svrSubReqBufChan    chan utils.SubReqWrapper         // channel we use to queue subscription requests
+	svrVideoReqBufChan  chan utils.VideoPacketHeader     // channel we use to log video requests
 	connIndex           utils.Dictionary[websocket.Conn] // index the connection objects against the ids of the clients represented thusly
 	rabbitmqAmqpChannel *amqp.Channel                    // channel connected to the broker
 	capacity            int                              // amount of devices that can be connected
@@ -39,6 +41,7 @@ func NewWsApiSvr(
 		endpoint,
 		make(chan utils.MessageWrapper),
 		make(chan utils.SubReqWrapper),
+		make(chan utils.VideoPacketHeader),
 		utils.Dictionary[websocket.Conn]{},
 		rabbitmqAmqpChannel,
 		capacity}
@@ -146,7 +149,17 @@ func (s *WsApiSvr) connHandler(conn *websocket.Conn) error {
 
 		// send the message to the function which handles sending to message broker
 		for _, val := range req.Messages {
-			s.svrMsgBufChan <- utils.MessageWrapper{val, &id, time.Now()}
+			func() {
+				// check if we're
+				if strings.Split(val, ";")[0] == "$VIDEO" {
+					vidReq := utils.VideoPacketHeader{}
+					if err := utils.ParseVideoPacketHeader(val, &vidReq); err != nil {
+						return
+					}
+					s.svrVideoReqBufChan <- vidReq
+				}
+			}()
+			s.svrMsgBufChan <- utils.MessageWrapper{val, &id, time.Now(), nil}
 		}
 		req = utils.ApiReq_WS{}
 	}

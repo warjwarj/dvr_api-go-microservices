@@ -198,6 +198,7 @@ func VideoDescriptorStr(strct FilePacketHeader) string {
 // $FILE;V03;1221223799;1;1;20241114-170853;240;20241114-170810;60;4742224
 // [0 $FILE];[1 protocol];[2 DeviceID];[3 SN];[4 camera];[5 RStart];[6 Rlen];[7 VStart];[8 Vlen];[9 filelen]<CR>[bytes]
 
+// parse a $FILE packet header
 func ParseFilePacketHeader(str string, strct *FilePacketHeader) error {
 	if str == "" || strct == nil {
 		fmt.Errorf("string or struct passed to this function were nil")
@@ -214,6 +215,40 @@ func ParseFilePacketHeader(str string, strct *FilePacketHeader) error {
 	strct.VideoStartTime = splitStr[7]
 	strct.VideoLength = splitStr[8]
 	return nil
+}
+
+// $VIDEO;85000;all;0;20181127-091000;86400<CR>
+// [0 $VIDEO];[1 DeviceID];[2 type];[3 camera];[4 start];[5 time length]<CR>
+
+// parse a $VIDEO message
+func ParseVideoPacketHeader(str string, strct *VideoPacketHeader) error {
+	if str == "" || strct == nil {
+		fmt.Errorf("string or struct passed to this function were nil")
+	}
+	splitStr := strings.Split(str, ";")
+	if splitStr[0] != "$VIDEO" {
+		fmt.Errorf("required $VIDEO packets")
+	}
+	strct.DeviceId = splitStr[2]
+	strct.RequestStartTime = splitStr[5]
+	strct.RequestLength = splitStr[6]
+	return nil
+}
+
+// helper to get req match string
+func ParseReqMatchStringFromVideoPacketHeader(strct *VideoPacketHeader) (string, error) {
+	if strct == nil {
+		return "", fmt.Errorf("video packet hader was nil")
+	}
+	return strct.DeviceId + strct.RequestLength + strct.RequestStartTime, nil
+}
+
+// helper to get req match string
+func ParseReqMatchStringFromVideoDescription(strct *VideoDescription) (string, error) {
+	if strct == nil {
+		return "", fmt.Errorf("video description was nil")
+	}
+	return strct.DeviceId + strct.RequestLength + strct.RequestStartTime, nil
 }
 
 /*

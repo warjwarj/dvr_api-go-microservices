@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 
 	config "dvr_api-go-microservices/pkg/config"
@@ -15,11 +16,12 @@ import (
 
 // record and index connected devices and clients
 type PubSubHandler struct {
-	logger              *zap.Logger                  //logger
-	apiSvr              *WsApiSvr                    // api svr
-	rabbitmqAmqpChannel *amqp.Channel                // channel to msg broker
-	subscriptionsLock   sync.Mutex                   // lock for the subs map
-	subscriptions       map[string]map[string]string // device ids against client ids, whose value is the same client it - map it used so we don't have to loop over the inner map.
+	logger              *zap.Logger                       //logger
+	apiSvr              *WsApiSvr                         // api svr
+	rabbitmqAmqpChannel *amqp.Channel                     // channel to msg broker
+	subscriptionsLock   sync.Mutex                        // lock for the subs map
+	subscriptions       map[string]map[string]string      // device ids against client ids, whose value is the same client it - map it used so we don't have to loop over the inner map.
+	videoRequsts        map[string]utils.VideoDescription // video description string
 }
 
 // constructor
@@ -45,7 +47,7 @@ func (sh *PubSubHandler) Run() error {
 		// process one message received from the API server
 		subReq, ok := <-sh.apiSvr.svrSubReqBufChan
 		if ok {
-			err := sh.Subscribe(&subReq)
+			err := sh.SubscribeToMessages(&subReq)
 			if err != nil {
 				sh.logger.Error("error processing subscription request: %v", zap.Error(err))
 			}
@@ -56,15 +58,15 @@ func (sh *PubSubHandler) Run() error {
 }
 
 // add the subscription requester's connection onto the list of subscribers for each device
-func (sh *PubSubHandler) Subscribe(subReq *utils.SubReqWrapper) error {
+func (sh *PubSubHandler) SubscribeToMessages(subReq *utils.SubReqWrapper) error {
 
-	// avoid concurrent read/write/iteration errors
+	// threadsafety
 	sh.subscriptionsLock.Lock()
 	defer sh.subscriptionsLock.Unlock()
 
 	// delete old subs
 	for _, val := range subReq.OldDevlist {
-		// if the map that holds subs isn't inited then just continue
+		// if the map that holds subs isn't initialised then just continue
 		if sh.subscriptions[val] == nil {
 			continue
 		}
@@ -82,8 +84,8 @@ func (sh *PubSubHandler) Subscribe(subReq *utils.SubReqWrapper) error {
 	return nil
 }
 
-// publish a message. This function works
-func (sh *PubSubHandler) Publish(msgWrap *utils.MessageWrapper) error {
+// publish a device message or a
+func (sh *PubSubHandler) PublishDeviceMessage(msgWrap *utils.MessageWrapper) error {
 
 	// avoid concurrent read/write/iteration errors
 	sh.subscriptionsLock.Lock()
@@ -93,8 +95,10 @@ func (sh *PubSubHandler) Publish(msgWrap *utils.MessageWrapper) error {
 	if sh.subscriptions[*msgWrap.ClientId] == nil {
 		return nil
 	}
-	// broadcast message to subscribers
+
+	// broadcast message to subscribers - there are no values in the nested map so ignore
 	for k, _ := range sh.subscriptions[*msgWrap.ClientId] {
+
 		// get the websocket connection associated with the id stored in the sub list
 		conn, ok := sh.apiSvr.connIndex.Get(k)
 		if !ok {
@@ -102,8 +106,16 @@ func (sh *PubSubHandler) Publish(msgWrap *utils.MessageWrapper) error {
 			delete(sh.subscriptions[*msgWrap.ClientId], k)
 			continue
 		}
+
+		// get date from message
 		packTime, err := utils.GetDateFromMessage(msgWrap.Message)
+		if err != nil {
+			sh.logger.Error("couldn't retreive date from message", zap.Error(err))
+		}
+
+		// create our device message struct
 		devMsg := &utils.DeviceMessage_Response{msgWrap.RecvdTime, packTime, msgWrap.Message, "from"}
+
 		// send message to this subscriber
 		err = wsjson.Write(context.TODO(), conn, devMsg)
 		if err != nil {
@@ -112,7 +124,6 @@ func (sh *PubSubHandler) Publish(msgWrap *utils.MessageWrapper) error {
 			continue
 		}
 	}
-	// no err
 	return nil
 }
 
@@ -138,8 +149,41 @@ func (s *PubSubHandler) pipeMessagesFromBroker(exchangeName string) {
 		}
 
 		// publish message to all of our clients who have subscribed to it
-		s.Publish(&msgWrap)
+		s.PublishDeviceMessage(&msgWrap)
 	}
+}
+
+// this function is used to publish a video description received from the camera server
+func (sh *PubSubHandler) PublishVideoDescription(msgWrap *utils.MessageWrapper) error {
+
+	fmt.Println(msgWrap)
+
+	// avoid concurrent read/write/iteration errors
+	sh.subscriptionsLock.Lock()
+	defer sh.subscriptionsLock.Unlock()
+
+	// get the req match string to look up client id in the map
+	reqMatchString, err := utils.ParseReqMatchStringFromVideoDescription(msgWrap.VideoDescription)
+	if err != nil {
+		sh.logger.Error("couldn't parse req match string from video description")
+	}
+
+	// retreive the connection from the map - there are no values in the nested map so ignore
+	for apiClientId, _ := range sh.subscriptions[reqMatchString] {
+
+		// get the connection
+		conn, ok := sh.apiSvr.connIndex.Get(apiClientId)
+		if !ok {
+			fmt.Errorf("couldn't retreive connection from index", zap.Error(err))
+		}
+
+		// write the video description struct to the connection
+		err = wsjson.Write(context.TODO(), conn, msgWrap.VideoDescription)
+		if err != nil {
+			sh.logger.Debug("websocket write operation failed", zap.Error(err))
+		}
+	}
+	return nil
 }
 
 func (s *PubSubHandler) pipeVideoDescriptionsFromBroker(exchangeName string) {
@@ -162,22 +206,7 @@ func (s *PubSubHandler) pipeVideoDescriptionsFromBroker(exchangeName string) {
 			s.logger.Error("received erroneous value from message broker, couldn't unmarshal into message wrapper")
 		}
 
-		// TODOTODOTODO
-		// TODOTODOTODO
-		// TODOTODOTODO
-		// TODOTODOTODO
-		// TODOTODOTODO
-		// TODOTODOTODO
-		//
-		//
-		// TODOTODOTODO
-		// TODOTODOTODO
-		// TODOTODOTODO
-		// TODOTODOTODO
-		// TODOTODOTODO
-		// TODOTODOTODO
-		// TODOTODOTODO
-		// TODOTODOTODO
-		// TODOTODOTODO
+		// publish the video we've ben notified of
+		s.PublishVideoDescription(&utils.MessageWrapper{VideoDescription: &msgWrap})
 	}
 }

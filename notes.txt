@@ -1,0 +1,31 @@
+CLIENT SIDE: SUBSCRIBE
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+api client sends a video request through
+
+we parse device id, req start time and req length into a struct and send to the chan
+
+receive the request notification in the pubsub_handler, parse the struct fields into a string 
+
+call the subscribe function and log in the subscriptions map of maps: reqmatchstring: clientid
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+DEVICE/CAM SERVER SIDE: PUBLISH
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+receive the VideoDescription struct in the pubsub_handler put the VideoDescription struct into a MessageWrapper
+
+call the publish function, sending the MessageWrapper with the VideoDescription to it
+
+in the publish function first check if the VideoDescription field in the MessageWrapper is nil and then if not parse the same string as above from it.
+
+match the req match string to the field in the subscriptions map
+
+send the VideoDescription to the client
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+reqmatchstring = device id + req start time + req length
+ = 122122379920241114-170853240
+
+1221223799;20241114-170853;240
+
+NOT WORKING INVESTIGATE
+silent fail?
