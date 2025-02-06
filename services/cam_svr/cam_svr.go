@@ -18,13 +18,13 @@ import (
 )
 
 type CamSvr struct {
-	logger              *zap.Logger
-	endpoint            string               // IP + port, ex: "192.168.1.77:9047"
-	sockOpBufSize       int                  // how much memory do we give each connection to perform send/recv operations
-	sockOpBufNum        int                  // how many buffers should we provision for the server (a lot)
-	sockOpBufStack      utils.Stack[*[]byte] // memory region we give each conn to so send/recv
-	rabbitmqAmqpChannel *amqp.Channel        // tcp connection with rabbitmq server
-	svrMsgBufChan       chan utils.VideoDescription
+	logger                  *zap.Logger
+	endpoint                string               // IP + port, ex: "192.168.1.77:9047"
+	sockOpBufSize           int                  // how much memory do we give each connection to perform send/recv operations
+	sockOpBufNum            int                  // how many buffers should we provision for the server (a lot)
+	sockOpBufStack          utils.Stack[*[]byte] // memory region we give each conn to so send/recv
+	rabbitmqAmqpChannel     *amqp.Channel        // tcp connection with rabbitmq server
+	svrVideoDescriptionChan chan utils.VideoDescription
 }
 
 func NewCamSvr(
@@ -105,6 +105,7 @@ func (s *CamSvr) deviceConnLoop(conn net.Conn) error {
 	framePayloadHeaderBuf := make([]byte, 128)
 	framePayloadBodyBuf := make([]byte, 4194304)
 
+	// this is a log of the video we receive
 	receivedVideoLog := make(map[string]utils.VideoDescription)
 
 	for {
@@ -205,6 +206,17 @@ func (s *CamSvr) deviceConnLoop(conn net.Conn) error {
 	if err := concatCmd.Run(); err != nil {
 		return fmt.Errorf("error running shell script concat.sh: %v", err)
 	}
+
+	// Upload the video to the cloud, and get a link to it.
+	if err = uploadVideoToS3(folderPath, receivedVideoLog); err != nil {
+		return fmt.Errorf("error uploading video to S3: %v", err)
+	}
+
+	// send video descriptions to broker
+	for _, v := range receivedVideoLog {
+		s.svrVideoDescriptionChan <- v
+	}
+
 	return nil
 }
 
@@ -217,7 +229,7 @@ func (s *CamSvr) pipeVideoDescriptionsToBroker(exchangeName string) {
 	}
 
 	// loop over channel and pipe messages into the rabbitmq exchange.
-	for msgWrap := range s.svrMsgBufChan {
+	for msgWrap := range s.svrVideoDescriptionChan {
 
 		// get json bytes so we can send them through the message broker
 		bytes, err := json.Marshal(msgWrap)

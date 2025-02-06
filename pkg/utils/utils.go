@@ -229,9 +229,9 @@ func ParseVideoPacketHeader(str string, strct *VideoPacketHeader) error {
 	if splitStr[0] != "$VIDEO" {
 		fmt.Errorf("required $VIDEO packets")
 	}
-	strct.DeviceId = splitStr[2]
-	strct.RequestStartTime = splitStr[5]
-	strct.RequestLength = splitStr[6]
+	strct.DeviceId = splitStr[1]
+	strct.RequestStartTime = splitStr[4]
+	strct.RequestLength = splitStr[5]
 	return nil
 }
 

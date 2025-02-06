@@ -154,25 +154,25 @@ func (s *PubSubHandler) pipeMessagesFromBroker(exchangeName string) {
 }
 
 // this function is used to publish a video description received from the camera server
-func (sh *PubSubHandler) PublishVideoDescription(msgWrap *utils.MessageWrapper) error {
+func (s *PubSubHandler) PublishVideoDescription(msgWrap *utils.MessageWrapper) error {
 
-	fmt.Println(msgWrap)
+	s.logger.Info(msgWrap.VideoDescription.VideoLink)
 
 	// avoid concurrent read/write/iteration errors
-	sh.subscriptionsLock.Lock()
-	defer sh.subscriptionsLock.Unlock()
+	s.subscriptionsLock.Lock()
+	defer s.subscriptionsLock.Unlock()
 
 	// get the req match string to look up client id in the map
 	reqMatchString, err := utils.ParseReqMatchStringFromVideoDescription(msgWrap.VideoDescription)
 	if err != nil {
-		sh.logger.Error("couldn't parse req match string from video description")
+		s.logger.Error("couldn't parse req match string from video description")
 	}
 
 	// retreive the connection from the map - there are no values in the nested map so ignore
-	for apiClientId, _ := range sh.subscriptions[reqMatchString] {
+	for apiClientId, _ := range s.subscriptions[reqMatchString] {
 
 		// get the connection
-		conn, ok := sh.apiSvr.connIndex.Get(apiClientId)
+		conn, ok := s.apiSvr.connIndex.Get(apiClientId)
 		if !ok {
 			fmt.Errorf("couldn't retreive connection from index", zap.Error(err))
 		}
@@ -180,7 +180,7 @@ func (sh *PubSubHandler) PublishVideoDescription(msgWrap *utils.MessageWrapper) 
 		// write the video description struct to the connection
 		err = wsjson.Write(context.TODO(), conn, msgWrap.VideoDescription)
 		if err != nil {
-			sh.logger.Debug("websocket write operation failed", zap.Error(err))
+			s.logger.Debug("websocket write operation failed", zap.Error(err))
 		}
 	}
 	return nil

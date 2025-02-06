@@ -67,7 +67,7 @@ done < <(find "$directoryPath" -type f -name "*.mp4" -print0 | sort -z)
 # Process each group
 for groupKey in "${!fileGroups[@]}"; do
     tempListFile=$(mktemp)
-    outputFilePath="$directoryPath/${groupKey}_${durationSums[$groupKey]}.mp4"
+    outputFilePath="$directoryPath/${durationSums[$groupKey]}_${groupKey}.mp4"
 
     # Sort files based on the second-to-last section (assuming numeric order)
     echo -n "${fileGroups[$groupKey]}" | sort -t '_' -k 5,5n | while IFS= read -r file; do
