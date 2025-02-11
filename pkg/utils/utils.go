@@ -240,7 +240,7 @@ func ParseReqMatchStringFromVideoPacketHeader(strct *VideoPacketHeader) (string,
 	if strct == nil {
 		return "", fmt.Errorf("video packet hader was nil")
 	}
-	return strct.DeviceId + strct.RequestLength + strct.RequestStartTime, nil
+	return strings.TrimSpace(strct.DeviceId + strct.RequestStartTime + strct.RequestLength), nil
 }
 
 // helper to get req match string
@@ -248,7 +248,7 @@ func ParseReqMatchStringFromVideoDescription(strct *VideoDescription) (string, e
 	if strct == nil {
 		return "", fmt.Errorf("video description was nil")
 	}
-	return strct.DeviceId + strct.RequestLength + strct.RequestStartTime, nil
+	return strings.TrimSpace(strct.DeviceId + strct.RequestStartTime + strct.RequestLength), nil
 }
 
 /*

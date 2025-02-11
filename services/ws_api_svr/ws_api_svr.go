@@ -23,7 +23,7 @@ type WsApiSvr struct {
 	endpoint            string                           // IP + port, ex: "192.168.1.77:9047"
 	svrMsgBufChan       chan utils.MessageWrapper        // channel we use to queue messages
 	svrSubReqBufChan    chan utils.SubReqWrapper         // channel we use to queue subscription requests
-	svrVideoReqBufChan  chan utils.VideoPacketHeader     // channel we use to log video requests
+	svrVideoReqBufChan  chan utils.SubReqWrapper         // channel we use to log video requests
 	connIndex           utils.Dictionary[websocket.Conn] // index the connection objects against the ids of the clients represented thusly
 	rabbitmqAmqpChannel *amqp.Channel                    // channel connected to the broker
 	capacity            int                              // amount of devices that can be connected
@@ -41,7 +41,7 @@ func NewWsApiSvr(
 		endpoint,
 		make(chan utils.MessageWrapper),
 		make(chan utils.SubReqWrapper),
-		make(chan utils.VideoPacketHeader),
+		make(chan utils.SubReqWrapper),
 		utils.Dictionary[websocket.Conn]{},
 		rabbitmqAmqpChannel,
 		capacity}
@@ -147,18 +147,27 @@ func (s *WsApiSvr) connHandler(conn *websocket.Conn) error {
 		subscriptions = make([]string, len(req.Subscriptions))
 		copy(subscriptions, req.Subscriptions)
 
-		// send the message to the function which handles sending to message broker
+		// handle video request
 		for _, val := range req.Messages {
-			func() {
-				// check if we're
-				if strings.Split(val, ";")[0] == "$VIDEO" {
+
+			// check if client has sent a video request
+			if strings.Split(val, ";")[0] == "$VIDEO" {
+				go func() {
 					vidReq := utils.VideoPacketHeader{}
 					if err := utils.ParseVideoPacketHeader(val, &vidReq); err != nil {
+						s.logger.Debug("Couldn't parse video packet header")
 						return
 					}
-					s.svrVideoReqBufChan <- vidReq
-				}
-			}()
+					reqMatchString, err := utils.ParseReqMatchStringFromVideoPacketHeader(&vidReq)
+					if err != nil {
+						s.logger.Debug("Couldn't parse reqMatchString from video description struct")
+						return
+					}
+					s.svrVideoReqBufChan <- utils.SubReqWrapper{ClientId: &id, ReqMatchString: reqMatchString}
+				}()
+			}
+
+			// send the message to the channel
 			s.svrMsgBufChan <- utils.MessageWrapper{val, &id, time.Now(), nil}
 		}
 		req = utils.ApiReq_WS{}

@@ -16,12 +16,12 @@ import (
 
 // record and index connected devices and clients
 type PubSubHandler struct {
-	logger              *zap.Logger                       //logger
-	apiSvr              *WsApiSvr                         // api svr
-	rabbitmqAmqpChannel *amqp.Channel                     // channel to msg broker
-	subscriptionsLock   sync.Mutex                        // lock for the subs map
-	subscriptions       map[string]map[string]string      // device ids against client ids, whose value is the same client it - map it used so we don't have to loop over the inner map.
-	videoRequsts        map[string]utils.VideoDescription // video description string
+	logger              *zap.Logger                  //logger
+	apiSvr              *WsApiSvr                    // api svr
+	rabbitmqAmqpChannel *amqp.Channel                // channel to msg broker
+	subscriptionsLock   sync.Mutex                   // lock for the subs map
+	msgSubscriptions    map[string]map[string]string // device ids against client ids, whose value is the same client it - map it used so we don't have to loop over the inner map.
+	vidReqSubscriptions map[string]*string           // req match strings against client ids
 }
 
 // constructor
@@ -30,7 +30,8 @@ func NewPubSubHandler(logger *zap.Logger, apiSvr *WsApiSvr, rabbitmqAmqpChannel 
 		logger:              logger,
 		apiSvr:              apiSvr,
 		rabbitmqAmqpChannel: rabbitmqAmqpChannel,
-		subscriptions:       make(map[string]map[string]string),
+		msgSubscriptions:    make(map[string]map[string]string),
+		vidReqSubscriptions: make(map[string]*string),
 	}
 	return r, nil
 }
@@ -39,26 +40,49 @@ func NewPubSubHandler(logger *zap.Logger, apiSvr *WsApiSvr, rabbitmqAmqpChannel 
 func (sh *PubSubHandler) Run() error {
 
 	// start the intake of device messages from the broker
-	go sh.pipeMessagesFromBroker(config.MSGS_FROM_DEVICE_SVR)
-	go sh.pipeVideoDescriptionsFromBroker(config.VIDEO_DESCRIPTION_EXCHANGE)
+	go sh.pipeMessagesFromBroker(config.MSGS_FROM_DEVICE_SVR)                // <-- pub dev messages
+	go sh.pipeVideoDescriptionsFromBroker(config.VIDEO_DESCRIPTION_EXCHANGE) // <-- pub video descriptions
 
-	// handle client messages, main program loop
-	for i := 0; ; i++ {
-		// process one message received from the API server
-		subReq, ok := <-sh.apiSvr.svrSubReqBufChan
+	// handle message subs
+	go func() {
+		// handle client messages, main program loop
+		for {
+			// process one sub req received from a websocket
+			subReq, ok := <-sh.apiSvr.svrSubReqBufChan
+			if ok {
+				err := sh.Sub_DeviceMessages(&subReq) // <-- sub device messages
+				if err != nil {
+					sh.logger.Error("error processing subscription request: %v", zap.Error(err))
+				}
+			} else {
+				sh.logger.Error("Couldn't receive value from svrSubReqBufChan")
+			}
+		}
+	}()
+
+	// handle vidreq subs
+	go func() {
+		// process one sub req received from a websocket
+		vidReq, ok := <-sh.apiSvr.svrVideoReqBufChan
 		if ok {
-			err := sh.SubscribeToMessages(&subReq)
+			err := sh.Sub_VideoDescription(&vidReq) // <-- sub video descriptions
 			if err != nil {
 				sh.logger.Error("error processing subscription request: %v", zap.Error(err))
 			}
 		} else {
 			sh.logger.Error("Couldn't receive value from svrSubReqBufChan")
 		}
-	}
+	}()
+
+	// hang indefinitely
+	var forever chan struct{}
+	<-forever
+
+	return nil
 }
 
 // add the subscription requester's connection onto the list of subscribers for each device
-func (sh *PubSubHandler) SubscribeToMessages(subReq *utils.SubReqWrapper) error {
+func (sh *PubSubHandler) Sub_DeviceMessages(subReq *utils.SubReqWrapper) error {
 
 	// threadsafety
 	sh.subscriptionsLock.Lock()
@@ -67,43 +91,43 @@ func (sh *PubSubHandler) SubscribeToMessages(subReq *utils.SubReqWrapper) error 
 	// delete old subs
 	for _, val := range subReq.OldDevlist {
 		// if the map that holds subs isn't initialised then just continue
-		if sh.subscriptions[val] == nil {
+		if sh.msgSubscriptions[val] == nil {
 			continue
 		}
-		delete(sh.subscriptions[val], *subReq.ClientId)
+		delete(sh.msgSubscriptions[val], *subReq.ClientId)
 	}
 	// add new subs
 	for _, val := range subReq.NewDevlist {
 		// if the requested device isn't currently registered as a 'publisher'
 		// then register them and add this client as a subscriber in case they register (connect) in the future
-		if sh.subscriptions[val] == nil {
-			sh.subscriptions[val] = make(map[string]string, 0)
+		if sh.msgSubscriptions[val] == nil {
+			sh.msgSubscriptions[val] = make(map[string]string, 0)
 		}
-		sh.subscriptions[val][*subReq.ClientId] = *subReq.ClientId
+		sh.msgSubscriptions[val][*subReq.ClientId] = *subReq.ClientId
 	}
 	return nil
 }
 
 // publish a device message or a
-func (sh *PubSubHandler) PublishDeviceMessage(msgWrap *utils.MessageWrapper) error {
+func (sh *PubSubHandler) Pub_DeviceMessages(msgWrap *utils.MessageWrapper) error {
 
 	// avoid concurrent read/write/iteration errors
 	sh.subscriptionsLock.Lock()
 	defer sh.subscriptionsLock.Unlock()
 
 	// check if there are even eny susbcribers
-	if sh.subscriptions[*msgWrap.ClientId] == nil {
+	if sh.msgSubscriptions[*msgWrap.ClientId] == nil {
 		return nil
 	}
 
 	// broadcast message to subscribers - there are no values in the nested map so ignore
-	for k, _ := range sh.subscriptions[*msgWrap.ClientId] {
+	for k, _ := range sh.msgSubscriptions[*msgWrap.ClientId] {
 
 		// get the websocket connection associated with the id stored in the sub list
 		conn, ok := sh.apiSvr.connIndex.Get(k)
 		if !ok {
 			// if client doesn't exist remove its entry in the map and continue
-			delete(sh.subscriptions[*msgWrap.ClientId], k)
+			delete(sh.msgSubscriptions[*msgWrap.ClientId], k)
 			continue
 		}
 
@@ -119,11 +143,58 @@ func (sh *PubSubHandler) PublishDeviceMessage(msgWrap *utils.MessageWrapper) err
 		// send message to this subscriber
 		err = wsjson.Write(context.TODO(), conn, devMsg)
 		if err != nil {
-			delete(sh.subscriptions[*msgWrap.ClientId], k)
+			delete(sh.msgSubscriptions[*msgWrap.ClientId], k)
 			sh.logger.Debug("removed subscriber %v from subscription list because a write operation failed", zap.String("k", k))
 			continue
 		}
 	}
+	return nil
+}
+
+// this function is used to publish a video description received from the camera server
+// the req match string we try and look up in the map should have been put there on the websocket server
+func (s *PubSubHandler) Pub_VideoDescription(msgWrap *utils.MessageWrapper) {
+
+	// avoid concurrent read/write/iteration errors
+	s.subscriptionsLock.Lock()
+	defer s.subscriptionsLock.Unlock()
+
+	// get the req match string to look up client id in the map
+	reqMatchString, err := utils.ParseReqMatchStringFromVideoDescription(msgWrap.VideoDescription)
+	if err != nil {
+		s.logger.Error("couldn't parse req match string from video description")
+	}
+
+	// retreive the connection from the map - there are no values in the nested map so ignore
+	apiClientId, ok := s.vidReqSubscriptions[reqMatchString]
+	if !ok {
+		s.logger.Error("Received video description that we haven't got a request for")
+		return
+	}
+
+	// get the connection
+	conn, ok := s.apiSvr.connIndex.Get(*apiClientId)
+	if !ok {
+		fmt.Errorf("couldn't retreive connection from index", zap.Error(err))
+	}
+
+	// write the video description struct to the connection
+	err = wsjson.Write(context.TODO(), conn, msgWrap.VideoDescription)
+	if err != nil {
+		s.logger.Debug("websocket write operation failed", zap.Error(err))
+	}
+}
+
+// this function is used to publish a video description received from the camera server
+// the req match string we try and look up in the map should have been put there on the websocket server
+func (sh *PubSubHandler) Sub_VideoDescription(vidReq *utils.SubReqWrapper) error {
+
+	// avoid concurrent read/write/iteration errors
+	sh.subscriptionsLock.Lock()
+	defer sh.subscriptionsLock.Unlock()
+
+	// subscribe and exit.
+	sh.vidReqSubscriptions[vidReq.ReqMatchString] = vidReq.ClientId
 	return nil
 }
 
@@ -149,41 +220,8 @@ func (s *PubSubHandler) pipeMessagesFromBroker(exchangeName string) {
 		}
 
 		// publish message to all of our clients who have subscribed to it
-		s.PublishDeviceMessage(&msgWrap)
+		s.Pub_DeviceMessages(&msgWrap)
 	}
-}
-
-// this function is used to publish a video description received from the camera server
-func (s *PubSubHandler) PublishVideoDescription(msgWrap *utils.MessageWrapper) error {
-
-	s.logger.Info(msgWrap.VideoDescription.VideoLink)
-
-	// avoid concurrent read/write/iteration errors
-	s.subscriptionsLock.Lock()
-	defer s.subscriptionsLock.Unlock()
-
-	// get the req match string to look up client id in the map
-	reqMatchString, err := utils.ParseReqMatchStringFromVideoDescription(msgWrap.VideoDescription)
-	if err != nil {
-		s.logger.Error("couldn't parse req match string from video description")
-	}
-
-	// retreive the connection from the map - there are no values in the nested map so ignore
-	for apiClientId, _ := range s.subscriptions[reqMatchString] {
-
-		// get the connection
-		conn, ok := s.apiSvr.connIndex.Get(apiClientId)
-		if !ok {
-			fmt.Errorf("couldn't retreive connection from index", zap.Error(err))
-		}
-
-		// write the video description struct to the connection
-		err = wsjson.Write(context.TODO(), conn, msgWrap.VideoDescription)
-		if err != nil {
-			s.logger.Debug("websocket write operation failed", zap.Error(err))
-		}
-	}
-	return nil
 }
 
 func (s *PubSubHandler) pipeVideoDescriptionsFromBroker(exchangeName string) {
@@ -207,6 +245,6 @@ func (s *PubSubHandler) pipeVideoDescriptionsFromBroker(exchangeName string) {
 		}
 
 		// publish the video we've ben notified of
-		s.PublishVideoDescription(&utils.MessageWrapper{VideoDescription: &msgWrap})
+		s.Pub_VideoDescription(&utils.MessageWrapper{VideoDescription: &msgWrap})
 	}
 }

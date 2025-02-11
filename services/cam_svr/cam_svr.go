@@ -199,15 +199,16 @@ func (s *CamSvr) deviceConnLoop(conn net.Conn) error {
 	convertCmd.Stderr = os.Stderr
 	concatCmd.Stderr = os.Stderr
 
-	// Run the shell scripts
+	// run the script to convert the files into mp4
 	if err := convertCmd.Run(); err != nil {
 		return fmt.Errorf("error running shell script convert.sh: %v", err)
 	}
+	// run the script to concatanate all videos from the same channel
 	if err := concatCmd.Run(); err != nil {
 		return fmt.Errorf("error running shell script concat.sh: %v", err)
 	}
 
-	// Upload the video to the cloud, and get a link to it.
+	// TODO IMPLEMENT upload the video to the cloud, and get a link to it.
 	if err = uploadVideoToS3(folderPath, receivedVideoLog); err != nil {
 		return fmt.Errorf("error uploading video to S3: %v", err)
 	}
