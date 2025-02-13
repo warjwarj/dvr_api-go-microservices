@@ -19,12 +19,13 @@ import (
 
 type CamSvr struct {
 	logger                  *zap.Logger
-	endpoint                string               // IP + port, ex: "192.168.1.77:9047"
-	sockOpBufSize           int                  // how much memory do we give each connection to perform send/recv operations
-	sockOpBufNum            int                  // how many buffers should we provision for the server (a lot)
-	sockOpBufStack          utils.Stack[*[]byte] // memory region we give each conn to so send/recv
-	rabbitmqAmqpChannel     *amqp.Channel        // tcp connection with rabbitmq server
-	svrVideoDescriptionChan chan utils.VideoDescription
+	endpoint                string                      // IP + port, ex: "192.168.1.77:9047"
+	sockOpBufSize           int                         // how much memory do we give each connection to perform send/recv operations
+	sockOpBufNum            int                         // how many buffers should we provision for the server (a lot)
+	sockOpBufStack          utils.Stack[*[]byte]        // memory region we give each conn to so send/recv
+	rabbitmqAmqpChannel     *amqp.Channel               // tcp connection with rabbitmq server
+	svrVideoDescriptionChan chan utils.VideoDescription // send video descriptions to broker
+	awsConn                 AwsConnection               // tools for putting video files into S3
 }
 
 func NewCamSvr(
@@ -33,6 +34,7 @@ func NewCamSvr(
 	bufSize int,
 	bufNum int,
 	rabbitmqAmqpChannel *amqp.Channel,
+	awsUtils AwsConnection,
 ) (*CamSvr, error) {
 	svr := CamSvr{
 		logger,
@@ -41,7 +43,8 @@ func NewCamSvr(
 		bufNum,
 		utils.Stack[*[]byte]{},
 		rabbitmqAmqpChannel,
-		make(chan utils.VideoDescription)}
+		make(chan utils.VideoDescription),
+		awsUtils}
 
 	// init the stack we use to store buffers
 	svr.sockOpBufStack.Init()
@@ -209,7 +212,7 @@ func (s *CamSvr) deviceConnLoop(conn net.Conn) error {
 	}
 
 	// TODO IMPLEMENT upload the video to the cloud, and get a link to it.
-	if err = uploadVideoToS3(folderPath, receivedVideoLog); err != nil {
+	if err = s.awsConn.UploadVideoToS3(folderPath, receivedVideoLog); err != nil {
 		return fmt.Errorf("error uploading video to S3: %v", err)
 	}
 

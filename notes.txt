@@ -1,31 +1,27 @@
 CLIENT SIDE: SUBSCRIBE
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-api client sends a video request through
-
-we parse device id, req start time and req length into a struct and send to the chan
-
-receive the request notification in the pubsub_handler, parse the struct fields into a string 
-
-call the subscribe function and log in the subscriptions map of maps: reqmatchstring: clientid
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+1) api client sends a video request through
+2) we parse device id, req start time and req length into a struct and send to the chan
+3) receive the request notification in the pubsub_handler, parse the struct fields into a string 
+4) call the subscribe function and log in the subscriptions map of maps: reqmatchstring: clientid
 
 DEVICE/CAM SERVER SIDE: PUBLISH
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-receive the VideoDescription struct in the pubsub_handler put the VideoDescription struct into a MessageWrapper
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+1) receive the VideoDescription struct in the pubsub_handler put the VideoDescription struct into a MessageWrapper
+2) call the publish function, sending the MessageWrapper with the VideoDescription to it
+3) in the publish function first check if the VideoDescription field in the MessageWrapper is nil and then if not parse the same string as above from it.
+4) match the req match string to the field in the subscriptions map
+5) send the VideoDescription to the client
 
-call the publish function, sending the MessageWrapper with the VideoDescription to it
+AWS NOTES
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Env Setup:
+1) Install the AWS Go SDK
+2) Get access keys from the AWS managment console
+3) put access key id and the access secret key into a .env file
+4) reference the .env file in your docker-compose file to import the keys as env vars into your docker container
+5) make sure you map port 53 for the aws sdk to penetrate the docker container
 
-in the publish function first check if the VideoDescription field in the MessageWrapper is nil and then if not parse the same string as above from it.
-
-match the req match string to the field in the subscriptions map
-
-send the VideoDescription to the client
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-reqmatchstring = device id + req start time + req length
- = 122122379920241114-170853240
-
-1221223799;20241114-170853;240
-
-NOT WORKING INVESTIGATE
-silent fail?
+Code:
+1) aws load default config reads from the env vars automatically
+2) make sure you specify the region awsConifig.WithRegion("eu-west-2")

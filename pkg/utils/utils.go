@@ -235,6 +235,11 @@ func ParseVideoPacketHeader(str string, strct *VideoPacketHeader) error {
 	return nil
 }
 
+// reqmatchstring = device id + req start time + req length
+// = 122122379920241114-170853240
+
+// 1221223799;20241114-170853;240
+
 // helper to get req match string
 func ParseReqMatchStringFromVideoPacketHeader(strct *VideoPacketHeader) (string, error) {
 	if strct == nil {

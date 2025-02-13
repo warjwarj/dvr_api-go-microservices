@@ -35,4 +35,7 @@ const (
 	MONGODB_ENDPOINT                   string = "mongodb://mongodb:27017"    // database uri
 	MONGODB_MESSAGE_DB                 string = "message_db"                 // message store db
 	MONGODB_MESSAGE_DEFAULT_COLLECTION string = "default_message_collection" // collection to store the messages in, in the database
+
+	// AWS
+	VIDEO_STORAGE_BUCKET string = "dvrapi-video-bucket"
 )

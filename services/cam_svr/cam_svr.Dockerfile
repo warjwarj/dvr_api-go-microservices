@@ -23,6 +23,9 @@ COPY ./services/cam_svr/go.mod ./services/cam_svr/go.sum /app/services/cam_svr/
 # copy all code files
 COPY ./services/cam_svr/*.go /app/services/cam_svr/
 
+# TODO remove, test file so we don't upload
+COPY ./services/cam_svr/verysmallfile.txt /app/services/cam_svr/
+
 WORKDIR /app/services/cam_svr
 RUN go mod download
 

@@ -52,11 +52,15 @@ services:
   # server for receiving video
   cam_svr:
     container_name: cam_svr
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
     build:
       context: ./
       dockerfile: ./services/cam_svr/cam_svr.Dockerfile
     ports:
       - "9044:9044"
+      - "53:53" # <-- port for the aws sdk to connect to the server
     expose:
      - "5672"
      - "15672"

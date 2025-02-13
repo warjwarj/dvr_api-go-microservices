@@ -47,8 +47,31 @@ func main() {
 	}
 	defer rabbitmqAmqpChannel.Close()
 
+	// connect to AWS
+	awsConn, err := NewAwsConnection(logger)
+	if err != nil {
+		logger.Fatal("fatal error connecting to AWS", zap.Error(err))
+		return
+	}
+
+	// TEST CODE BELOW, works as of 13/02/2025
+	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	// // upload the video to the cloud and get a link to it
+	// if err := awsConn.uploadFile(context.TODO(), config.VIDEO_STORAGE_BUCKET, "testfile", "/app/services/cam_svr/verysmallfile.txt"); err != nil {
+	// 	logger.Error("Couldn't upload file to AWS", zap.Error(err))
+	// }
+
+	// // get a presigned url
+	// presignedUrl, err := awsConn.getPresignedUrl(context.TODO(), config.VIDEO_STORAGE_BUCKET, "testfile", 600)
+	// if err != nil {
+	// 	logger.Error("Couldn't get presigned URL from AWS", zap.Error(err))
+	// }
+
+	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 	// create our device server struct
-	devSvr, err := NewCamSvr(logger, config.CAM_SVR_ENDPOINT, 2048, 10, rabbitmqAmqpChannel)
+	devSvr, err := NewCamSvr(logger, config.CAM_SVR_ENDPOINT, 2048, 10, rabbitmqAmqpChannel, *awsConn)
 	if err != nil {
 		logger.Fatal("fatal error creating cam server: %v", zap.Error(err))
 		return
