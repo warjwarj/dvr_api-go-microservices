@@ -159,6 +159,11 @@ func (s *PubSubHandler) Pub_VideoDescription(msgWrap *utils.MessageWrapper) {
 	s.subscriptionsLock.Lock()
 	defer s.subscriptionsLock.Unlock()
 
+	// nil check
+	if msgWrap == nil || msgWrap.VideoDescription == nil {
+		s.logger.Error("cannot publish video description as its' field in the msgWrap struct is nil.")
+	}
+
 	// get the req match string to look up client id in the map
 	reqMatchString, err := utils.ParseReqMatchStringFromVideoDescription(msgWrap.VideoDescription)
 	if err != nil {
@@ -177,6 +182,8 @@ func (s *PubSubHandler) Pub_VideoDescription(msgWrap *utils.MessageWrapper) {
 	if !ok {
 		fmt.Errorf("couldn't retreive connection from index", zap.Error(err))
 	}
+
+	fmt.Println("Vid desc: ", msgWrap.VideoDescription)
 
 	// write the video description struct to the connection
 	err = wsjson.Write(context.TODO(), conn, msgWrap.VideoDescription)
@@ -233,18 +240,18 @@ func (s *PubSubHandler) pipeVideoDescriptionsFromBroker(exchangeName string) {
 	}
 
 	// reuse it in loop
-	var msgWrap utils.VideoDescription
+	var vidDesc utils.VideoDescription
 
 	// connection loop
 	for d := range deliveryChan {
 
 		// this is the message revceived from broker
-		err := json.Unmarshal(d.Body, &msgWrap)
+		err := json.Unmarshal(d.Body, &vidDesc)
 		if err != nil {
 			s.logger.Error("received erroneous value from message broker, couldn't unmarshal into message wrapper")
 		}
 
 		// publish the video we've ben notified of
-		s.Pub_VideoDescription(&utils.MessageWrapper{VideoDescription: &msgWrap})
+		s.Pub_VideoDescription(&utils.MessageWrapper{VideoDescription: &vidDesc})
 	}
 }

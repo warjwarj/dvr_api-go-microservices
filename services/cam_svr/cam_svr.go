@@ -211,7 +211,7 @@ func (s *CamSvr) deviceConnLoop(conn net.Conn) error {
 		return fmt.Errorf("error running shell script concat.sh: %v", err)
 	}
 
-	// TODO IMPLEMENT upload the video to the cloud, and get a link to it.
+	// upload the video to the cloud, and get a link to it.
 	if err = s.awsConn.UploadVideoToS3(folderPath, receivedVideoLog); err != nil {
 		return fmt.Errorf("error uploading video to S3: %v", err)
 	}

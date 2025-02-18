@@ -54,7 +54,7 @@ func main() {
 		return
 	}
 
-	// TEST CODE BELOW, works as of 13/02/2025
+	// TEST CODE - for checking connection to AWS.
 	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	// // upload the video to the cloud and get a link to it

@@ -59,15 +59,23 @@ func (au *AwsConnection) UploadVideoToS3(folderPath string, receivedVideoLog map
 		// parse the channel num from the file name
 		chanNum := strings.Split(strings.Split(e.Name(), "_")[3], ".")[0]
 
-		// upload the video to the cloud and get a link to it
-		if err := au.uploadFile(context.TODO(), config.VIDEO_STORAGE_BUCKET, e.Name(), e.Name()); err != nil {
-			au.logger.Error("Couldn't upload file to AWS", zap.Error(err))
+		// // upload the video to the cloud and get a link to it
+		// filepath := folderPath + "/" + e.Name()
+		// if err := au.uploadFile(context.TODO(), config.VIDEO_STORAGE_BUCKET, e.Name(), filepath); err != nil {
+		// 	au.logger.Error("Couldn't upload file to AWS", zap.Error(err))
+		// 	continue
+		// }
+
+		// get a presigned url
+		presigned, err := au.getPresignedUrl(context.TODO(), config.VIDEO_STORAGE_BUCKET, e.Name(), 3600)
+		if err != nil {
+			au.logger.Error("Couldn't get presigned URL from AWS", zap.Error(err))
+			continue
 		}
 
-		awsLink := "soijsoijsoij"
 		// put the video link into the video description
 		if vidDesc, exists := receivedVideoLog[chanNum]; exists {
-			vidDesc.VideoLink = awsLink
+			vidDesc.VideoLink = presigned.URL
 			receivedVideoLog[chanNum] = vidDesc
 		}
 	}
