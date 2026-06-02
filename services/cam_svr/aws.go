@@ -56,8 +56,6 @@ func (au *AwsConnection) UploadVideoToS3(folderPath string, receivedVideoLog map
 
 	// for every file in the folder upload to the folder
 	for _, e := range entries {
-		// parse the channel num from the file name
-		chanNum := strings.Split(strings.Split(e.Name(), "_")[3], ".")[0]
 
 		// // upload the video to the cloud and get a link to it
 		// filepath := folderPath + "/" + e.Name()
@@ -72,6 +70,9 @@ func (au *AwsConnection) UploadVideoToS3(folderPath string, receivedVideoLog map
 			au.logger.Error("Couldn't get presigned URL from AWS", zap.Error(err))
 			continue
 		}
+
+		// parse the channel num from the file name
+		chanNum := strings.Split(strings.Split(e.Name(), "_")[3], ".")[0]
 
 		// put the video link into the video description
 		if vidDesc, exists := receivedVideoLog[chanNum]; exists {

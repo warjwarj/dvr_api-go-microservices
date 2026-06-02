@@ -201,11 +201,11 @@ func VideoDescriptorStr(strct FilePacketHeader) string {
 // parse a $FILE packet header
 func ParseFilePacketHeader(str string, strct *FilePacketHeader) error {
 	if str == "" || strct == nil {
-		fmt.Errorf("string or struct passed to this function were nil")
+		return fmt.Errorf("string or struct passed to this function were nil")
 	}
 	splitStr := strings.Split(str, ";")
 	if splitStr[0] != "$FILE" {
-		fmt.Errorf("required $FILE packets")
+		return fmt.Errorf("required $FILE packets")
 	}
 	strct.DeviceId = splitStr[2]
 	strct.Channel = splitStr[4]
@@ -223,11 +223,11 @@ func ParseFilePacketHeader(str string, strct *FilePacketHeader) error {
 // parse a $VIDEO message
 func ParseVideoPacketHeader(str string, strct *VideoPacketHeader) error {
 	if str == "" || strct == nil {
-		fmt.Errorf("string or struct passed to this function were nil")
+		return fmt.Errorf("one or more parameters were nil or empty")
 	}
 	splitStr := strings.Split(str, ";")
 	if splitStr[0] != "$VIDEO" {
-		fmt.Errorf("required $VIDEO packets")
+		return fmt.Errorf("required $VIDEO packets")
 	}
 	strct.DeviceId = splitStr[1]
 	strct.RequestStartTime = splitStr[4]
@@ -237,8 +237,6 @@ func ParseVideoPacketHeader(str string, strct *VideoPacketHeader) error {
 
 // reqmatchstring = device id + req start time + req length
 // = 122122379920241114-170853240
-
-// 1221223799;20241114-170853;240
 
 // helper to get req match string
 func ParseReqMatchStringFromVideoPacketHeader(strct *VideoPacketHeader) (string, error) {

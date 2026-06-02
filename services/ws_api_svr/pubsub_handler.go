@@ -20,7 +20,7 @@ type PubSubHandler struct {
 	apiSvr              *WsApiSvr                    // api svr
 	rabbitmqAmqpChannel *amqp.Channel                // channel to msg broker
 	subscriptionsLock   sync.Mutex                   // lock for the subs map
-	msgSubscriptions    map[string]map[string]string // device ids against client ids, whose value is the same client it - map it used so we don't have to loop over the inner map.
+	msgSubscriptions    map[string]map[string]string // device ids against client ids, whose value is the same client it - map is used so we don't have to loop over the inner map.
 	vidReqSubscriptions map[string]*string           // req match strings against client ids
 }
 
@@ -108,7 +108,7 @@ func (sh *PubSubHandler) Sub_DeviceMessages(subReq *utils.SubReqWrapper) error {
 	return nil
 }
 
-// publish a device message or a
+// publish a device message
 func (sh *PubSubHandler) Pub_DeviceMessages(msgWrap *utils.MessageWrapper) error {
 
 	// avoid concurrent read/write/iteration errors

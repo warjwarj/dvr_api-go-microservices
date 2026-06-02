@@ -6,7 +6,7 @@ import { formatDateTimeDVRFormat } from '../Utils';
 // PROPS: 
 // active: is the vidreq widget active? If so we set msg value to default vidreq.
 // setCurrentMsg: change the message value in the input widget
-export default function VidReq({ setMsgVal }) {
+export function VidReq({ setMsgVal }) {
 
     // $VIDEO;[DeviceID];[type];[camera];[start];[time length]<CR>
     const [ vidreq, setVidreq ] = useState(["$VIDEO", "0", "all", "0", "0", "0"])

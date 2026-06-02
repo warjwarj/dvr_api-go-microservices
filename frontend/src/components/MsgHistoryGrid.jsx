@@ -27,11 +27,10 @@ export function MsgHistoryGrid({ device, after, before }) {
     const [prevAfter, setPrevAfter] = useState(after)
     const [prevBefore, setPrevBefore] = useState(before)
 
-    // logic to update table upon rerender, if the stae has changed
-    if (device !== prevDevice) {
+    useEffect(() => {
       setPrevDevice(device);
       fetchAndSetRowData()
-    }
+    }, [device])
 
     function formatMsgHistoryData(data){
       if (data === null || data === undefined) {

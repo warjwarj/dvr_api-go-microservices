@@ -8,7 +8,7 @@ import { getCurrentTime, formatDateTimeDVRFormat } from '../Utils';
 
 // components
 import { TabContent, TabButtons } from './Tabs';
-import VidReq from './VidReq';
+import { VidReq } from './VidReq';
 import { MsgHistoryGrid } from './MsgHistoryGrid';
 import { fetchConnectedDevices } from '../HttpApiConn';
 
@@ -36,6 +36,7 @@ export default function Devices() {
         fetchAndSetConnectedDevices()
     }, []);
 
+    // SUBSCRIPTION HANDLING - upon selected device change.
     useEffect(() => {
         const sendSubReq = () => {
             // Subscribe to receive all messages from all devices connected to the server
@@ -83,6 +84,9 @@ export default function Devices() {
         if ("Message" in payload) {
             addMessageToLog(payload.Message)
         }
+        else if ("VideoLink" in payload && "Channel" in payload) {
+            addMessageToLog(payload["VideoLink"])
+        }
     }
 
     // record a device message notification we've received from the server
@@ -107,6 +111,13 @@ export default function Devices() {
         const message = document.querySelector("#send-message-input").value + "\r";
         apiReq.Messages = [message]
         WsApiConn.apiConnection.send(JSON.stringify(apiReq))
+    }
+
+    const getDateWithTimeDelta = (daysDelta) => {
+      const now = new Date();
+      const oneWeekEarlier = new Date(now);
+      oneWeekEarlier.setDate(now.getDate() + daysDelta);
+      return oneWeekEarlier
     }
 
     //~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -154,14 +165,13 @@ export default function Devices() {
                 <br />
                 <List id="message-response-list"></List>
             </div>
-            
             {/* display the message and the context it resides in */}
             <div>
                 <h5>Message History</h5>
                 <MsgHistoryGrid 
                     device={selectedDevice} 
-                    after={"2023-10-03T16:45:14.000+00:00"} 
-                    before={"2025-10-03T16:45:14.000+00:00"}
+                    after={getDateWithTimeDelta(-7)} 
+                    before={getDateWithTimeDelta(7)}
                 />
             </div>
         </div>

@@ -6,12 +6,18 @@ if [ "$#" -eq 0 ]; then
     exit 1
 fi
 
-# Use the provided directory
+# Instantiate variable to address the first argument to the script
 directory="$1"
 
 # Check if the directory exists
 if [ ! -d "$directory" ]; then
     echo "The specified directory does not exist."
+    exit 1
+fi
+
+# Check if ffmpeg is installed
+if ! command -v ffmpeg &>/dev/null; then
+    echo "Error: ffmpeg is not installed. Please install it and try again."
     exit 1
 fi
 
@@ -31,7 +37,7 @@ for avi_file in *; do
         ffmpeg -loglevel quiet -i "$avi_file" -c:v copy -c:a aac "$mp4_file" &
         PID=$!
 
-        # wait for command
+        # wait
         echo "Waiting for ffmpeg conversion ($PID) to finish..."
         wait $PID
 
